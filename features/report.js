@@ -121,6 +121,61 @@ function view(){
 #rg-pager .pager-btn.active{ background:var(--primary); color:#fff; border-color:var(--primary); }
 #rg-pager .pager-btn[disabled]{ opacity:.45; cursor:not-allowed; }
 #rg-pager .pager-ellipsis{ padding:0 4px; color:var(--muted); }
+/* === Ringkas: scroll horizontal hanya di tabel === */
+#app{ overflow-x: hidden; overscroll-behavior-x: contain; } /* cegah halaman ikut geser */
+#rg-table{ position: relative; }
+
+#rg-table .h-scroll{
+  overflow-x: auto;
+  overflow-y: hidden;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;  /* smooth di iOS */
+  touch-action: pan-x;                /* geser kanan-kiri di dalam kontainer */
+}
+
+/* Paksa tabel lebih lebar dari layar agar memicu scroll */
+#rg-table .h-scroll .table{
+  min-width: 1000px;                  /* sesuaikan bila kolom banyak */
+}
+
+/* Di layar kecil, tambah lebar minimum */
+@media (max-width: 480px){
+  #rg-table .h-scroll .table{ min-width: 1100px; }
+}
+
+/* === Ringkas: cegah overflow halaman & izinkan scroll hanya di kontainer === */
+#report-out.is-ringkas,
+#report-out.is-ringkas .card{
+  max-width:100%;
+  overflow-x:hidden;                   /* kartu tidak melebarin halaman */
+}
+
+/* kontainer scroll untuk tabel ringkas */
+#rg-table .h-scroll{
+  overflow-x:auto;
+  overflow-y:hidden;
+  max-width:100%;
+  -webkit-overflow-scrolling:touch;
+  touch-action: pan-x;                 /* Android/Chrome */
+  overscroll-behavior-inline:contain;  /* cegah “nyeret” halaman */
+}
+
+/* paksa tabel lebih lebar agar memicu scroll, tapi tetap di dalam kontainer */
+#rg-table .h-scroll .table{
+  display: inline-table;               /* hindari “meluber” layout flex */
+  min-width: 1000px;
+}
+
+/* Filter & KPI biar tidak mendorong lebar layar di mobile */
+@media (max-width: 768px){
+  #report-out .card > .row{ flex-wrap: wrap; gap:8px; }     /* bar filter bisa patah baris */
+  #report-out .card > .row .col{ flex:1 1 140px; min-width:140px; }
+  #report-out .kpi{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:8px;
+}
+
+/* (opsional) tambahkan baris ini kalau masih ada dorongan horizontal */
+html, body, #app{ max-width:100%; overflow-x:hidden; }
+
   </style>
   `;
 }
@@ -254,6 +309,7 @@ const baseRows = filterData(m, y, mode, key).map(r => {
   // rangka KPI
   const sum = summarize(baseRows);
   const out = $('#report-out');
+  out.classList.add('is-ringkas');
   out.innerHTML = `
     <div class="kpi">
       <div class="card"><b>Total Tonase</b><div class="badge">${sum.ton.toFixed(2)} ton</div></div>
@@ -318,39 +374,41 @@ const baseRows = filterData(m, y, mode, key).map(r => {
 
     // table HTML
     elTable.innerHTML = `
-      <table class="table">
-        <thead>
+        <div class="h-scroll">
+    <table class="table">
+      <thead>
+        <tr>
+          <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${sortBy==='tanggal'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+          <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${sortBy==='divisi_id'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+          <th class="sortable" data-sort="_blokName">Blok <span class="dir">${sortBy==='_blokName'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+          <th class="num">Luas (Ha)</th>
+          <th class="num">JJG</th>
+          <th class="num">Br (kg)</th>
+          <th class="num">HK</th>
+          <th class="num">Tonase</th>
+          <th class="num">%LF</th>
+          <th class="num">Ton/HK</th>
+          <th class="num">Ton/Ha</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${pageRows.map(r=>`
           <tr>
-            <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${sortBy==='tanggal'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-            <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${sortBy==='divisi_id'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-            <th class="sortable" data-sort="_blokName">Blok <span class="dir">${sortBy==='_blokName'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-            <th class="num">Luas (Ha)</th>
-            <th class="num">JJG</th>
-            <th class="num">Br (kg)</th>
-            <th class="num">HK</th>
-            <th class="num">Tonase</th>
-            <th class="num">%LF</th>
-            <th class="num">Ton/HK</th>
-            <th class="num">Ton/Ha</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${pageRows.map(r=>`
-            <tr>
-              <td>${r.tanggal}</td>
-              <td>${r.divisi_id||''}</td>
-              <td>${r._blokName||''}</td>
-              <td class="num">${_f2(r.luas_panen_ha)}</td>
-              <td class="num">${_f2(r.jjg)}</td>
-              <td class="num">${_f2(r.brondolan_kg)}</td>
-              <td class="num">${_f2(r.hk)}</td>
-              <td class="num">${_f2(r.tonase_ton)}</td>
-              <td class="num">${_f2(r._lfPct)}</td>
-              <td class="num">${_f2(r._tonPerHK)}</td>
-              <td class="num">${_f2(r._tonPerHa)}</td>
-            </tr>`).join('')}
-        </tbody>
-      </table>
+            <td>${r.tanggal}</td>
+            <td>${r.divisi_id||''}</td>
+            <td>${r._blokName||''}</td>
+            <td class="num">${_f2(r.luas_panen_ha)}</td>
+            <td class="num">${_f2(r.jjg)}</td>
+            <td class="num">${_f2(r.brondolan_kg)}</td>
+            <td class="num">${_f2(r.hk)}</td>
+            <td class="num">${_f2(r.tonase_ton)}</td>
+            <td class="num">${_f2(r._lfPct)}</td>
+            <td class="num">${_f2(r._tonPerHK)}</td>
+            <td class="num">${_f2(r._tonPerHa)}</td>
+          </tr>`).join('')}
+      </tbody>
+    </table>
+  </div>
     `;
 
     // header click → sort
@@ -657,6 +715,7 @@ function renderMonitor(){
 
   const container = $('#report-out');         // <- ELEMEN-nya
   if (!container) return;
+  container.classList.remove('is-ringkas');
 
   container.innerHTML = monitorHTML(m, y, mode, key);   // render tabelnya dulu
 

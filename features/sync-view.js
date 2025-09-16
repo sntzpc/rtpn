@@ -1,6 +1,3 @@
-// --- DEBUG (sementara, untuk memastikan file ini yang ter-load) ---
-console.log('[sync-view] loaded @', new Date().toISOString());
-
 // =====================
 // File: features/sync-view.js
 // =====================
@@ -123,7 +120,7 @@ function _exportCSV(){
 function view(){
   return `
   <div class="card">
-    <h2>Sinkronisasi (sync-view.js)</h2>
+    <h2>Sinkronisasi</h2>
 
     <div class="card sync-status" id="sync-status"></div>
 

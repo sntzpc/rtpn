@@ -182,6 +182,25 @@ function kpiHTML(k){
     <div class="card"><b>Ton/HK</b><div class="badge">${k.tonPerHK}</div></div>
     <div class="card"><b>Ton/Ha</b><div class="badge">${k.tonPerHa}</div></div>
     <div class="card"><b>Rata2 Ton/Hari</b><div class="badge">${k.avgTonPerDay}</div></div>
+
+      <style>
+    /* KPI Grid (Stats) */
+    .kpi{
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 8px;
+      margin: .5rem 0;
+    }
+    .kpi > .card{
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      text-align:center; padding:10px;
+    }
+    .kpi > .card b{ display:block; margin-bottom:6px; }
+    .kpi .badge{ font-variant-numeric: tabular-nums; }
+    @media (max-width: 480px){
+      .kpi{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+    }
+  </style>
   `;
 }
 
