@@ -4,6 +4,46 @@
 import { $, fmtDateISO, ensureNumber } from '../core/utils.js';
 import { Keys, LStore } from '../core/storage.js';
 
+// === Paraf Digital harian (monitor footer) ===
+const PARAF_DAY_KEY = (Keys.PARAF_DAY_LOG || 'pp2:paraf.daylog');
+
+function pfAll(){ return LStore.getArr(PARAF_DAY_KEY) || []; }
+function pfSave(arr){ LStore.setArr(PARAF_DAY_KEY, arr); }
+function pfSig(){
+  return {
+    assistant_nik:  localStorage.getItem(Keys.NIK)  || localStorage.getItem('pp2:session.nik')  || '',
+    assistant_name: localStorage.getItem(Keys.NAME) || localStorage.getItem('pp2:session.name') || '',
+  };
+}
+
+// Cek sudah diparaf untuk 1 tanggal
+function pfIsMarked({scope, key, dateISO}){
+  return !!pfAll().find(x => x.scope===scope && String(x.key)===String(key) && x.date===dateISO);
+}
+
+// Toggle/set status paraf untuk 1 tanggal
+function pfToggle({scope, key, dateISO, on}){
+  const all = pfAll();
+  const i = all.findIndex(x => x.scope===scope && String(x.key)===String(key) && x.date===dateISO);
+  if (on){
+    if (i<0) all.push({ scope, key, date: dateISO, ...pfSig(), ts: new Date().toISOString() });
+  }else{
+    if (i>=0) all.splice(i,1);
+  }
+  pfSave(all);
+}
+
+// Kumpulan tanggal (Set<ISO>) yang sudah diparaf untuk 1 bulan (scope+key)
+function pfMarkedSetMonth({scope, key, y, m}){
+  const ym = `${y}-${String(m).padStart(2,'0')}-`;
+  const set = new Set();
+  pfAll().forEach(x=>{
+    if (x.scope===scope && String(x.key)===String(key) && String(x.date||'').startsWith(ym)) set.add(x.date);
+  });
+  return set;
+}
+
+
 // --- Helper nama blok (id -> nama/kode) ---
 function _blokNameById(id){
   const list = LStore.getArr(Keys.MASTER_BLOK) || [];
@@ -533,12 +573,14 @@ function monitorHTML(m, y, mode, key){
     return true;
   });
 
-  // header tanggal
-const daysHeader = Array.from({length:nDays}, (_,i)=>{
-  const d = i+1;
-  const cls = (sundays.has(d) ? 'wk' : '') + (holidays.has(d)?' off':'');
-  return `<th class="day ${cls}">${d}</th>`;
-}).join('');
+    // header tanggal (tampilkan 1..nDays; beri kelas 'wk' utk Minggu dan 'off' utk libur)
+  const daysHeader = Array.from({ length: nDays }, (_, i) => {
+    const d = i + 1;
+    const cls =
+      (sundays.has(d) ? 'wk' : '') + (holidays.has(d) ? ' off' : '');
+    return `<th class="day ${cls.trim()}">${d}</th>`;
+  }).join('');
+
 
   // grand
   const grandPerDay = Array(nDays).fill(0);
@@ -680,6 +722,35 @@ const grandRow = `<tr class="grand">
   <td><b>${f1(grandRot)}</b></td>
 </tr>`;
 
+// === Baris paraf (footer) ===
+const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
+const marked = pfMarkedSetMonth({ scope, key, y, m });
+
+const parafCells = Array.from({length:nDays}, (_,i)=>{
+  const d   = i+1;
+  const iso = `${y}-${pad2(m)}-${pad2(d)}`;
+  const hasPanen = (grandPerDay[d-1] > 0); // aktif hanya jika ada panen pada hari tsb
+  const isOn = marked.has(iso);
+  const cls = `${(sundays.has(d)?'wk':'')} ${(holidays.has(d)?'off':'')} paraf-cell ${isOn?'pf-on':''}`;
+
+  if (hasPanen){
+    return `<td class="${cls.trim()}">
+      <button type="button" class="pf-btn" data-iso="${iso}" aria-pressed="${isOn?'true':'false'}">${isOn?'✓':'○'}</button>
+    </td>`;
+  }else{
+    return `<td class="${cls.trim()}"><span class="muted">—</span></td>`;
+  }
+}).join('');
+
+// Kolom TOTAL & ROT di ujung → biarkan kosong
+const parafRow = `<tr class="paraf-row">
+  <td class="kiri freeze1 w-kadvel2" colspan="2"><b>Paraf (Asisten)</b></td>
+  <td class="freeze3 w-luas"></td>
+  ${parafCells}
+  <td></td><td></td>
+</tr>`;
+
+
 return `
   <div class="card moni">
     <h3>Monitoring Pusingan Panen — Periode ${pad2(m)}/${y}</h3>
@@ -699,7 +770,7 @@ return `
         <tbody>
           ${sectionRows}
           ${grandRow}
-          <tr><td class="kiri freeze1 w-kadvel2" colspan="${2}">Paraf:</td><td class="freeze3 w-luas"></td><td colspan="${nDays+1}"></td></tr>
+          ${parafRow}
         </tbody>
       </table>
     </div>
@@ -718,6 +789,27 @@ function renderMonitor(){
   container.classList.remove('is-ringkas');
 
   container.innerHTML = monitorHTML(m, y, mode, key);   // render tabelnya dulu
+
+// === Toggle paraf di footer (hanya untuk role asisten) ===
+const roleUser = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
+const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
+
+const btns = container.querySelectorAll('.paraf-row .pf-btn[data-iso]');
+if (roleUser === 'asisten'){
+  btns.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const iso = btn.getAttribute('data-iso');
+      const nextOn = btn.getAttribute('aria-pressed')!=='true';
+      pfToggle({ scope, key, dateISO: iso, on: nextOn });
+      btn.setAttribute('aria-pressed', nextOn?'true':'false');
+      btn.textContent = nextOn ? '✓' : '○';
+      btn.closest('td')?.classList.toggle('pf-on', nextOn);
+    });
+  });
+}else{
+  btns.forEach(b=> b.setAttribute('disabled', 'disabled'));
+}
+
 
   // Sisipkan tombol "Cetak PDF (A4)" setelah tabel terpasang
   if (typeof enableReportPrint === 'function'){
