@@ -474,7 +474,7 @@ export function render(app) {
     $('#in-hk').value = '';
     $('#in-note').value = '';
     SELECTED_BLOCK = null;
-    setKPI(0, 0, 0, 0);
+    setKPI(0, 0, 0, 0, 0);
   });
 }
 
