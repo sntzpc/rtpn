@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <title>Pusingan Panen</title>
+    <link rel="stylesheet" href="./assets/style.css" />
+    <!-- Ikon sederhana -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Ctext y='54' x='6' font-size='56'%3E🌴%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Pusingan Panen</h1>
+      <nav class="app-nav">
+        <a href="#/input" data-link>Input</a>
+        <a href="#/report" data-link>Report</a>
+        <a href="#/sync" data-link>Sinkronisasi</a>
+        <a href="#/stats" data-link>Statistik</a>
+        <a href="#/settings" data-link>Pengaturan</a>
+      </nav>
+      <div class="role-badge" id="role-badge">Role: -</div>
+    </header>
+
+    <main id="app"></main>
+
+    <footer class="app-footer">
+      <small>Offline-first • LocalStorage • Sync</small>
+    </footer>
+
+    <script type="module">
+      import { initRouter } from "./core/router.js";
+      import { loadSessionRoleBadge } from "./core/utils.js";
+      import "./ui/toast.js";
+      import "./ui/spinner.js";
+
+      window.addEventListener("hashchange", () => {
+        initRouter();
+      });
+      window.addEventListener("load", () => {
+        loadSessionRoleBadge();
+        initRouter();
+      });
+    </script>
+  </body>
+
+  <!-- Export libs -->
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script>window.GAS_BASE_URL='https://script.google.com/macros/s/AKfycbzoLFM6swaTRS7jz0AT_i3udQTm6u8ZCFBPdiudkhon-f1BzDAj0BTyBhqZlM-P4oM8oA/exec';</script>
+
+
+</html>

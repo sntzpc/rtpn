@@ -1,0 +1,458 @@
+/* ===========================
+   THEME TOKENS (default: DARK)
+   =========================== */
+
+:root {
+  /* Dark (default) */
+  --bg:            #0f172a;  /* slate-900 */
+  --panel:         #111827;  /* gray-900 */
+  --text:          #e5e7eb;  /* gray-200 */
+  --muted:         #9ca3af;  /* gray-400 */
+  --accent:        #22c55e;  /* green-500 */
+  --warn:          #f59e0b;  /* amber-500 */
+  --danger:        #ef4444;  /* red-500 */
+
+  /* UI tokens */
+  --border:        #1f2937;
+  --card-bg:       #0b1220;
+  --input-bg:      #0b1220;
+  --table-head-bg: #1f2937;
+  --table-cell-bg: #0b1220;
+  --badge-bg:      #1f2937;
+  --badge-fg:      #e5e7eb;
+  --link:          #60a5fa;
+}
+
+/* Light overrides (aktif jika body.theme-light) */
+.theme-light {
+  --bg:            #ffffff;
+  --panel:         #f1f5f9;
+  --text:          #111827;
+  --muted:         #6b7280;
+  --accent:        #22c55e;
+  --warn:          #d97706;
+  --danger:        #dc2626;
+
+  --border:        #e5e7eb;
+  --card-bg:       #ffffff;
+  --input-bg:      #ffffff;
+  --table-head-bg: #f3f4f6;
+  --table-cell-bg: #ffffff;
+  --badge-bg:      #111827;
+  --badge-fg:      #f9fafb;
+  --link:          #2563eb;
+}
+
+/* ===========================
+   BASE
+   =========================== */
+
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, Segoe UI, Roboto, Arial;
+}
+
+a { color: var(--link); }
+
+/* ===========================
+   LAYOUT & STRUCTURE
+   =========================== */
+
+.app-header {
+  display: flex; align-items: center; gap: 16px; justify-content: space-between;
+  padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+
+.app-nav a { color: var(--text); text-decoration: none; margin: 0 8px; opacity: .9; }
+.app-nav a:hover { opacity: 1; }
+
+#app { padding: 16px; max-width: 1200px; margin: 0 auto; }
+
+.card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.col { flex: 1 1 280px; }
+
+/* ===========================
+   FORMS & BUTTONS
+   =========================== */
+
+label { display: block; margin-bottom: 6px; color: var(--muted); }
+
+input, select, textarea, button {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--input-bg);
+  color: var(--text);
+}
+
+button.primary { background: var(--accent); color: #06240f; border: none; }
+button.warn    { background: var(--warn);   color: #1f1300; border: none; }
+button.danger  { background: var(--danger); color: #300;     border: none; }
+
+/* ===========================
+   TABLES
+   =========================== */
+
+.table { width: 100%; border-collapse: collapse; }
+.table th, .table td {
+  border: 1px solid var(--border);
+  padding: 8px;
+  text-align: left;
+  color: var(--text);
+  background: var(--table-cell-bg);
+}
+.table thead th { background: var(--table-head-bg); position: sticky; top: 0; z-index: 1; }
+
+/* Kolom Aksi: rapat & tidak wrap judul */
+.table th.aksi, .table td.aksi {
+  width: 1%;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+/* Container tombol aksi: selalu satu baris; scroll mendatar jika sempit */
+.cell-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: nowrap;           /* wajib satu baris */
+  white-space: nowrap;
+  overflow-x: auto;            /* bisa discroll mendatar */
+  -webkit-overflow-scrolling: touch;
+  max-width: 100%;
+}
+
+/* Override: tombol di dalam tabel jangan full width */
+.table td button,
+.table th button,
+.cell-actions > button {
+  width: auto;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  padding: 6px 12px;
+  font-size: 13px;
+}
+
+/* Opsional: ratakan 3 kolom angka terakhir di kanan */
+td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
+
+/* ===========================
+   BADGES, KPI
+   =========================== */
+
+.badge {
+  display: inline-block; padding: 2px 8px; border-radius: 999px;
+  background: var(--badge-bg); color: var(--badge-fg);
+  border: 1px solid var(--border);
+}
+.role-badge { font-size: 12px; color: var(--muted); }
+
+.kpi { display: flex; gap: 12px; flex-wrap: wrap; }
+.kpi .card { flex: 1 1 220px; }
+
+/* ===========================
+   TOAST & SPINNER
+   =========================== */
+
+.toast {
+  position: fixed; right: 16px; bottom: 16px; padding: 12px 16px; border-radius: 8px;
+  background: var(--panel); color: var(--text); border: 1px solid var(--border); opacity: .98;
+}
+.spinner { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: none; align-items: center; justify-content: center; z-index: 9999; }
+.spinner .dot { width: 12px; height: 12px; border-radius: 50%; background: var(--accent); margin: 0 6px; animation: b 1s infinite alternate; }
+.spinner .dot:nth-child(2) { animation-delay: .2s; }
+.spinner .dot:nth-child(3) { animation-delay: .4s; }
+@keyframes b { from { transform: translateY(0) } to { transform: translateY(-8px) } }
+
+/* ===========================
+   REPORT: Monitoring Grid (final, non-overlapping)
+   =========================== */
+
+/* tabel & sel dasar */
+.moni table { width:100%; border-collapse:collapse; }
+.moni th,
+.moni td{
+  border:1px solid var(--border);
+  padding:4px;
+  text-align:center;
+  font-size:12px;
+  color:var(--text);
+  background:var(--table-cell-bg);
+}
+
+/* header tetap menempel + kontras tinggi */
+.moni thead th{
+  background:var(--table-head-bg);
+  position:sticky; top:0; z-index:1;
+  color:#000000;                     /* DARK: putih terang */
+  font-weight:700;
+}
+.theme-light .moni thead th{ color:#111827; }      /* LIGHT: gelap */
+
+/* penanda hari di HEADER (tidak mengganggu body) */
+.moni thead th.day.wk  { background:#a21caf; color:#fff; } /* 7/14/21/28 */
+.moni thead th.day.off { background:#64748b; color:#fff; } /* libur */
+
+/* alignment kiri utk kolom teks */
+.moni .kiri { text-align:left; }
+.moni .headL{ white-space:nowrap; }
+
+/* pewarnaan isi (body) */
+.moni .full  { background:#1f8f36; color:#fff; font-weight:600; } /* selesai / hari-pertama = hijau */
+.moni .part  { background:#f7c77b; color:#111; font-weight:600; } /* parsial */
+.moni .over { background:#ef4444; color:#fff; font-weight:700; }
+.moni .wk    { background:#c026d3; color:#fff; }                  /* tiap 7 hari (body) */
+.moni .off   { background:#e5e7eb; color:#fff; }                  /* libur (body) */
+.moni .sub   { background:#fde68a; color:#111; font-weight:600; } /* subtotal kadvel */
+.moni .grand { background:#fca5a5; color:#111; font-weight:700; } /* grand total */
+
+/* konten sel */
+.moni td .val{ display:block; }               /* angka hektar panen */
+
+/* angka pusingan (1,2,3,…) hanya ditulis di sel KOSONG */
+.moni td .rot-num{
+  display:block;
+  color:var(--muted);
+  font-weight:600;
+  line-height:1.2;
+}
+
+/* kompatibilitas: jika masih ada CSS/HTML lama yang pakai .rot-badge, matikan overlay */
+.moni td .rot-badge{ display:none !important; }
+
+/* responsif ringan (opsional) */
+@media (max-width: 768px){
+  .moni th, .moni td{ font-size:12px; padding:4px; white-space:nowrap; }
+}
+
+
+
+/* ===========================
+   THEME SWITCH (geser)
+   =========================== */
+
+.theme-toggle-host { display: flex; align-items: center; gap: 10px; margin-left: 8px; }
+.theme-toggle-inline { display: flex; align-items: center; gap: 8px; }
+
+.switch { position: relative; display: inline-block; width: 52px; height: 28px; }
+.switch input { display: none; }
+.switch .slider {
+  position: absolute; inset: 0;
+  background: var(--table-head-bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  transition: background .2s ease;
+  box-shadow: inset 0 0 0 2px rgba(0,0,0,0.05);
+}
+.switch .slider::before {
+  content: "";
+  position: absolute; width: 22px; height: 22px; left: 3px; top: 3px;
+  background: var(--badge-fg);
+  border-radius: 50%;
+  transition: transform .25s ease;
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+.switch input:checked + .slider::before { transform: translateX(24px); }
+
+/* ===========================
+   SYNC STATUS RIBBON
+   =========================== */
+
+.sync-status { overflow-x: auto; -webkit-overflow-scrolling: touch; padding-bottom: 4px; }
+.sync-status .ribbon { display: flex; gap: 8px; min-width: max-content; }
+.sync-status .item {
+  flex: 0 0 auto;
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px;
+}
+.sync-dot { width: 8px; height: 8px; border-radius: 50%; background: #9ca3af; }
+.sync-dot.online  { background: #22c55e; }
+.sync-dot.offline { background: #ef4444; }
+
+/* ===========================
+   RESPONSIVE
+   =========================== */
+
+/* Tablet (≤1024px) */
+@media (max-width: 1024px) {
+  #app { max-width: 100%; padding: 12px; }
+}
+
+/* Mobile (≤768px) */
+@media (max-width: 768px) {
+  /* Header & nav */
+  .app-header { flex-wrap: wrap; gap: 8px; }
+  .app-nav { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .app-nav a { white-space: nowrap; padding: 6px 8px; }
+
+  /* Grid → stack */
+  .row { flex-direction: column; gap: 10px; }
+  .col { flex: 1 1 auto; min-width: 100%; }
+
+  /* Form: hindari zoom iOS saat fokus */
+  input, select, textarea, button { font-size: 16px; }
+
+  /* Card & spacing */
+  .card { padding: 12px; }
+
+  /* KPI lebih padat */
+  .kpi .card { flex: 1 1 160px; }
+
+  /* Tabel di dalam card → scroll horizontal */
+  .card { overflow-x: auto; }
+  .table th, .table td { padding: 6px; font-size: 12px; white-space: nowrap; }
+
+  /* Monitoring grid */
+  .card.moni { overflow-x: auto; }
+  .moni th, .moni td { padding: 4px; font-size: 12px; white-space: nowrap; text-align: center; }
+
+  /* Aksi: sedikit padat */
+  .cell-actions { gap: 6px; }
+  .table td button,
+  .cell-actions > button { padding: 6px 10px; font-size: 12px; }
+}
+
+/* ===== Progress Modal ===== */
+.progress-modal {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,.45);
+  display: none;
+  align-items: center; justify-content: center;
+  z-index: 10000;
+}
+.progress-card {
+  background: var(--card-bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  width: min(520px, 92vw);
+  box-shadow: 0 10px 30px rgba(0,0,0,.4);
+}
+.progress-title { font-weight: 600; margin: 0 0 6px; }
+.progress-sub   { color: var(--muted); font-size: 13px; margin-bottom: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.progress-bar   { height: 10px; border-radius: 999px; border: 1px solid var(--border); background: var(--table-head-bg); overflow: hidden; }
+.progress-bar > div { height: 100%; width: 0%; background: var(--accent); transition: width .2s ease; }
+.progress-percent { text-align: right; font-size: 12px; color: var(--muted); margin-top: 8px; }
+.progress-actions { margin-top: 12px; text-align: right; }
+.progress-bar.indeterminate > div { width: 30%; animation: indeterminate 1.2s infinite linear; }
+@keyframes indeterminate { 0% { margin-left: -30%; } 100% { margin-left: 100%; } }
+
+/* === Freeze 3 kolom pertama di Monitoring === */
+
+/* wadah scroll horizontal */
+.moni .grid-wrap{ overflow:auto; }
+
+/* paksa tabel bisa melebar → muncul scrollbar */
+.moni .grid-wrap table{ width:max-content; min-width:100%; table-layout:fixed; }
+
+/* lebar kolom frozen (silakan sesuaikan angka) */
+.moni{
+  --freeze1: 60px;   /* Kadvel */
+  --freeze2: 60px;  /* Blok */
+  --freeze3: 60px;   /* Luas */
+}
+.moni .w-kadvel { min-width:var(--freeze1); width:var(--freeze1); }
+.moni .w-blok   { min-width:var(--freeze2); width:var(--freeze2); }
+.moni .w-luas   { min-width:var(--freeze3); width:var(--freeze3); }
+
+/* utk baris subtotal/grand: kolom pertama colspan=2 */
+.moni .w-kadvel2{
+  min-width:calc(var(--freeze1) + var(--freeze2));
+  width:calc(var(--freeze1) + var(--freeze2));
+}
+
+/* kolom sticky (kiri) */
+.moni th.freeze1, .moni td.freeze1{
+  position:sticky; left:0; z-index:4;
+  background: var(--table-cell-bg,#fff);
+}
+.moni th.freeze2, .moni td.freeze2{
+  position:sticky; left:var(--freeze1); z-index:4;
+  background: var(--table-cell-bg,#fff);
+}
+.moni th.freeze3, .moni td.freeze3{
+  position:sticky; left:calc(var(--freeze1) + var(--freeze2)); z-index:4;
+  background: var(--table-cell-bg,#fff);
+}
+
+/* header di atas body; header+frozen di atas header biasa */
+.moni thead th{ z-index:5; }
+.moni thead th.freeze1,
+.moni thead th.freeze2,
+.moni thead th.freeze3{ z-index:6; }
+
+/* === Header Monitoring selalu terang (putih), termasuk 3 kolom sticky) === */
+
+/* semua header */
+.moni thead th{
+  background:#f3f4f6 !important;   /* putih abu muda */
+  color:#111 !important;            /* teks hitam */
+}
+
+/* header untuk kolom beku 1–3 harus ikut warna header, bukan warna sel */
+.moni thead th.freeze1,
+.moni thead th.freeze2,
+.moni thead th.freeze3{
+  background:#f3f4f6 !important;
+  color:#111 !important;
+  z-index:7;                        /* di atas header lain */
+}
+
+/* jaga-jaga khusus dark theme (opsional, tapi eksplisit) */
+.theme-dark .moni thead th,
+.theme-dark .moni thead th.freeze1,
+.theme-dark .moni thead th.freeze2,
+.theme-dark .moni thead th.freeze3{
+  background:#f3f4f6 !important;
+  color:#111 !important;
+}
+
+/* ===== KPI ringkas: label di atas, angka di bawah, rata tengah ===== */
+.kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.kpi .card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;        /* rata tengah horizontal */
+  justify-content: center;    /* rata tengah vertikal */
+  text-align: center;         /* teks rata tengah */
+  padding: 12px 16px;
+}
+.kpi .card > b {
+  display: block;
+  margin-bottom: 8px;         /* jarak label ke angka */
+  font-size: 14px;
+  letter-spacing: .2px;
+}
+.kpi .card .badge {
+  display: inline-block;
+  align-self: center;         /* pastikan centering */
+  text-align: center;
+  font-size: 14px;            /* angka lebih besar */
+  font-weight: 700;
+  padding: 8px 14px;          /* “kotak” di sekitar angka */
+  border-radius: 12px;        /* sudut membulat */
+}
