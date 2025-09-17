@@ -3,6 +3,8 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0b6bcb" />
     <title>Pusingan Panen</title>
     <link rel="stylesheet" href="./assets/style.css" />
     <!-- Ikon sederhana -->
@@ -20,6 +22,9 @@
         <a href="#/sync" data-link>Sinkronisasi</a>
         <a href="#/stats" data-link>Statistik</a>
         <a href="#/settings" data-link>Pengaturan</a>
+        <a href="#/users" id="menu-user-manage" data-link>Kelola User</a>
+        <!-- NEW: menu admin (disembunyikan default, akan ditampilkan via guard JS bila role=admin) -->
+        <a href="#/users" id="menu-user-manage" data-link style="display:none">Kelola User</a>
       </nav>
       <div class="role-badge" id="role-badge">Role: -</div>
     </header>
@@ -30,6 +35,7 @@
       <small>Offline-first • LocalStorage • Sync</small>
     </footer>
 
+    <!-- App bootstrap -->
     <script type="module">
       import { initRouter } from "./core/router.js";
       import { loadSessionRoleBadge } from "./core/utils.js";
@@ -44,13 +50,41 @@
         initRouter();
       });
     </script>
+
+    <!-- Export libs (dibiarkan global agar mudah dipakai fitur ekspor) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+    <!-- Konfigurasi GAS endpoint -->
+    <script>
+      window.GAS_BASE_URL='https://script.google.com/macros/s/AKfycbzYHcrz_tfrsL3xhdn6VPIwbMQ7Q0BgUvR3WTjSsZemYItfljKWdnU6_sz4Jpn26Ebadg/exec';
+    </script>
+
+    <!-- NEW: registrasi service worker untuk offline mode -->
+<!-- tepat sebelum </body>, daftarkan Service Worker: -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => {
+          // opsional: auto-activate update
+          if (reg.waiting) reg.waiting.postMessage({type:'SKIP_WAITING'});
+          reg.addEventListener('updatefound', () => {
+            const sw = reg.installing;
+            if (!sw) return;
+            sw.addEventListener('statechange', () => {
+              if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                // SW baru siap; bisa tampilkan toast “App diperbarui”
+                console.log('Service worker updated');
+              }
+            });
+          });
+        })
+        .catch(err => console.error('SW reg failed', err));
+    });
+  }
+</script>
+
   </body>
-
-  <!-- Export libs -->
-<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-<script>window.GAS_BASE_URL='https://script.google.com/macros/s/AKfycbzoLFM6swaTRS7jz0AT_i3udQTm6u8ZCFBPdiudkhon-f1BzDAj0BTyBhqZlM-P4oM8oA/exec';</script>
-
-
 </html>

@@ -235,14 +235,32 @@ function yearOptions(){
 function fillSelectors(){
   $('#f-year').innerHTML = yearOptions();
 
-  // mandor
-  const mandor = (LStore.getArr(Keys.MASTER_MANDOR)||[]);
-  $('#f-mandor').innerHTML = mandor.map(m=>`<option value="${m.nik}">${m.nama||m.nik} (${m.nik})</option>`).join('');
+  const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
+  const divisiAll  = (LStore.getArr(Keys.MASTER_DIVISI)||[]);
+  const mandorAll  = (LStore.getArr(Keys.MASTER_MANDOR)||[]);
+  let   divisiOpts = divisiAll;
+  let   mandorOpts = mandorAll;
 
-  // divisi
-  const divisi = (LStore.getArr(Keys.MASTER_DIVISI)||[]);
-  $('#f-divisi').innerHTML = divisi.map(d=>`<option value="${d.id}">${d.nama||d.kode||d.id}</option>`).join('');
+  if (role === 'asisten'){
+    // Batasi ke divisi milik Asisten
+    let divSet = new Set();
+    try{
+      const arr = JSON.parse(localStorage.getItem(Keys.USER_DIVISI)||'[]');
+      if (Array.isArray(arr)) divSet = new Set(arr.map(String));
+    }catch(_){}
+    if (divSet.size){
+      divisiOpts = divisiAll.filter(d => divSet.has(String(d.id)));
+      mandorOpts = mandorAll.filter(m => divSet.has(String(m.divisi_id)));
+    }
+  }
+
+  $('#f-mandor').innerHTML = mandorOpts
+    .map(m=>`<option value="${m.nik}">${m.nama||m.nik} (${m.nik})</option>`).join('');
+
+  $('#f-divisi').innerHTML = divisiOpts
+    .map(d=>`<option value="${d.id}">${d.nama||d.kode||d.id}</option>`).join('');
 }
+
 
 function holidaysSet(y, m){
   const list = (LStore.getArr(Keys.MASTER_LIBUR)||[]);

@@ -9,6 +9,11 @@ import { applyTheme, mountThemeToggle } from './theme.js';
 const BUST = localStorage.getItem('pp2:cacheBust') || 'dev';
 const withBust = (url) => `${url}${url.includes('?') ? '&' : '?'}v=${BUST}`;
 
+// ---- Helpers RBAC ----
+function getRole(){
+  return (localStorage.getItem(Keys.ROLE) || '').toLowerCase();
+}
+function isAdmin(){ return getRole() === 'admin'; }
 
 // ---- Migrasi session lama → kunci baru (sekali jalan saat refresh) ----
 function migrateLegacySession(){
@@ -31,16 +36,19 @@ function migrateLegacySession(){
 export function refreshSessionUI(){
   migrateLegacySession();
 
-  const role = localStorage.getItem(Keys.ROLE) || '-';
+  const role = (localStorage.getItem(Keys.ROLE) || '-').toLowerCase();
   const nik  = localStorage.getItem(Keys.NIK)  || '';
   const name = localStorage.getItem(Keys.NAME) || '';
 
   const elRole = document.getElementById('role-badge'); // wajib di layout
   const elUser = document.getElementById('user-badge'); // opsional
+  const menuAdmin = document.getElementById('menu-user-manage');
 
-  const roleLabel = role==='asisten' ? 'Asisten'
-                   : role==='mandor' ? 'Mandor'
-                   : '-';
+  const roleLabel =
+      role==='admin'   ? 'Admin'
+    : role==='asisten' ? 'Asisten'
+    : role==='mandor'  ? 'Mandor'
+    : '-';
 
   const text = (role!=='-')
     ? `Aktif: ${roleLabel} — ${name || nik || 'Tanpa Nama'}${nik?` (${nik})`:''}`
@@ -48,6 +56,7 @@ export function refreshSessionUI(){
 
   if (elRole) elRole.textContent = text;
   if (elUser) elUser.textContent = (name || nik || '');
+  if (menuAdmin) menuAdmin.style.display = isAdmin() ? '' : 'none';
 }
 
 // ---- Util route ----
@@ -62,30 +71,49 @@ async function renderRoute(route, app){
   try{
     switch(route){
       case '#/input': {
-        const mod = await import('../features/input.js');
+        const mod = await import(/* @vite-ignore */ withBust('../features/input.js'));
         mod.render(app);
         break;
       }
       case '#/report': {
-        const mod = await import('../features/report.js');
+        const mod = await import(/* @vite-ignore */ withBust('../features/report.js'));
         mod.render(app);
         break;
       }
       case '#/sync': {
-        const mod = await import('../features/sync-view.js?ts=' + Date.now());
+        const mod = await import(/* @vite-ignore */ withBust('../features/sync-view.js'));
         mod.render(app);
         break;
       }
       case '#/settings': {
-        const mod = await import('../features/settings.js');
+        const mod = await import(/* @vite-ignore */ withBust('../features/settings.js'));
         mod.render(app);
         break;
       }
-case '#/stats': {
-  const mod = await import(/* @vite-ignore */ withBust('../features/stats.js'));
-  mod.render(app);
-  break;
-}
+      case '#/stats': {
+        const mod = await import(/* @vite-ignore */ withBust('../features/stats.js'));
+        mod.render(app);
+        break;
+      }
+      case '#/users': {
+        if (!isAdmin()){
+          app.innerHTML = `<div class="card">
+            <h2>Akses ditolak</h2>
+            <p>Halaman ini khusus <b>Admin</b>.</p>
+          </div>`;
+          break;
+        }
+        try{
+          const mod = await import(/* @vite-ignore */ withBust('../features/users.js'));
+          mod.render(app);
+        }catch(err){
+          app.innerHTML = `<div class="card">
+            <h2>Halaman Users belum tersedia</h2>
+            <pre style="white-space:pre-wrap">${err?.message || err}</pre>
+          </div>`;
+        }
+        break;
+      }
       default: {
         app.innerHTML = '<div class="card"><h2>Halaman tidak ditemukan</h2></div>';
       }
@@ -109,9 +137,11 @@ export async function initRouter(){
 
   applyTheme();
   mountThemeToggle();
-window.addEventListener('storage', (e)=>{
-  if (e.key === Keys.THEME) applyTheme();
-});
+
+  window.addEventListener('storage', (e)=>{
+    if (e.key === Keys.THEME) applyTheme();
+  });
+
   // Render pertama
   refreshSessionUI();
   await renderRoute(currentRoute(), app);
@@ -128,5 +158,4 @@ window.addEventListener('storage', (e)=>{
   document.addEventListener('DOMContentLoaded', refreshSessionUI);
   mountThemeToggle();  // aman, tidak akan dobel karena by id
   applyTheme();        // jaga-jaga jika CSS/DOM baru butuh reapply
-
 }

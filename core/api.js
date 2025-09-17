@@ -1,10 +1,25 @@
 // =====================
-// api.js (fixed & hardened)
+// api.js (fixed & hardened) + session attach + auth guard
 // =====================
+import { Keys /*, LStore*/ } from './storage.js';
 
-const DEFAULT_EXEC = 'https://script.google.com/macros/s/AKfycbzoLFM6swaTRS7jz0AT_i3udQTm6u8ZCFBPdiudkhon-f1BzDAj0BTyBhqZlM-P4oM8oA/exec';
-const BASE_URL =
-  (typeof window !== 'undefined' && window.GAS_BASE_URL ? window.GAS_BASE_URL : DEFAULT_EXEC);
+function _auth(){
+  return {
+    nik_auth: localStorage.getItem(Keys.NIK)   || '',
+    token:    localStorage.getItem(Keys.TOKEN) || '',
+  };
+}
+
+const DEFAULT_EXEC =
+  'https://script.google.com/macros/s/AKfycbzYHcrz_tfrsL3xhdn6VPIwbMQ7Q0BgUvR3WTjSsZemYItfljKWdnU6_sz4Jpn26Ebadg/exec';
+
+// Urutan preferensi: window.GAS_BASE_URL → localStorage.API_BASE → DEFAULT_EXEC
+const BASE_URL = (() => {
+  const w = (typeof window !== 'undefined') ? window : {};
+  const fromWin = w.GAS_BASE_URL || '';
+  const fromLS  = (typeof localStorage !== 'undefined' && localStorage.getItem('API_BASE')) || '';
+  return String(fromWin || fromLS || DEFAULT_EXEC).replace(/\/$/, '');
+})();
 
 // Sanity log (tidak memicu preflight)
 if (BASE_URL.includes('/macros/echo')) {
@@ -14,11 +29,30 @@ if (!BASE_URL.endsWith('/exec')) {
   console.warn('BASE_URL sebaiknya diakhiri dengan /exec (Web App).');
 }
 
+// Selalu tempelkan kredensial + sesi (role/nik/divisi)
+function sessionAttach(params = {}){
+  // role & nik: ambil dari session bila tidak diberikan
+  const role = params.role != null ? params.role : (localStorage.getItem(Keys.ROLE) || '');
+  const nik  = params.nik  != null ? params.nik  : (localStorage.getItem(Keys.NIK)  || '');
+
+  // divisi (khusus asisten) → kirim CSV "SRIE1,SRIE2"
+  let divisiCsv = params.divisi;
+  if (divisiCsv == null){
+    try{
+      const arr = JSON.parse(localStorage.getItem(Keys.USER_DIVISI) || '[]');
+      if (Array.isArray(arr) && arr.length) divisiCsv = arr.join(',');
+    }catch(_){}
+  }
+
+  // >>> penting: merge nik_auth & token ke semua request
+  return { ..._auth(), ...params, role, nik, ...(divisiCsv ? { divisi: divisiCsv } : {}) };
+}
+
 async function _fetchJSON(params){
   const qs  = new URLSearchParams(params);
   const url = `${BASE_URL}?${qs.toString()}`;
 
-  // Guard: kalau payload sangat besar, pertimbangkan pindah ke POST + doPost
+  // Guard: bila payload terlalu besar, sarankan POST (belum diaktifkan)
   if (url.length > 7000) {
     throw new Error('Payload terlalu besar untuk GET. Pertimbangkan POST (form-encoded) + doPost di GAS.');
   }
@@ -34,30 +68,50 @@ export const API = {
 
   // AUTH
   async login({ nik, pass_hash, role }) {
+    // login memang tidak butuh nik_auth/token
     return _fetchJSON({ route:'auth.login', nik, pass_hash, role });
   },
 
-  // USER MGMT
+  // USER MGMT (server wajib guard admin)
   async userAdd({ nik, name, role, pass_hash }) {
-    return _fetchJSON({ route:'user.add', nik, name, role, pass_hash });
+    return _fetchJSON(sessionAttach({ route:'user.add', nik, name, role, pass_hash }));
   },
   async userReset({ nik, pass_hash }) {
-    return _fetchJSON({ route:'user.reset', nik, pass_hash });
+    return _fetchJSON(sessionAttach({ route:'user.reset', nik, pass_hash }));
   },
-  async userList()  { return _fetchJSON({ route:'user.list' }); },
-  async userDelete({ nik }) { return _fetchJSON({ route:'user.delete', nik }); },
+  async userList()  {
+    return _fetchJSON(sessionAttach({ route:'user.list' }));
+  },
+  async userDelete({ nik }) {
+    return _fetchJSON(sessionAttach({ route:'user.delete', nik }));
+  },
 
   // MASTER
-  async masterPull({ role, nik }) { return _fetchJSON({ route:'master.pull', role, nik }); },
-  async masterPush({ items })     { return _fetchJSON({ route:'master.push', payload: JSON.stringify(items) }); },
+  async masterPull(params = {}) {
+    return _fetchJSON(sessionAttach({ route:'master.pull', ...params }));
+  },
+  async masterPush({ items }) {
+    return _fetchJSON(sessionAttach({ route:'master.push', payload: JSON.stringify(items || {}) }));
+  },
 
   // DATA AKTUAL
-  async actualPull({ role, nik, month, year }) {
-    return _fetchJSON({ route:'actual.pull', role, nik, month, year });
+  async actualPull({ month, year } = {}) {
+    return _fetchJSON(sessionAttach({ route:'actual.pull', month, year }));
   },
 
   // PUSINGAN
-  async pushInsert({ record }) { return _fetchJSON({ route:'pusingan.insert', payload: JSON.stringify(record) }); },
-  async pushUpdate({ key, record }) { return _fetchJSON({ route:'pusingan.update', key, payload: JSON.stringify(record) }); },
-  async checkKey({ key }) { return _fetchJSON({ route:'pusingan.check', key }); },
+  async pushInsert({ record }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.insert', payload: JSON.stringify(record) }));
+  },
+  async pushUpdate({ key, record }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.update', key, payload: JSON.stringify(record) }));
+  },
+  async checkKey({ key }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.check', key }));
+  },
+
+  // OFFLINE → ONLINE: bulk sync (pastikan endpoint tersedia di GAS bila ingin dipakai)
+  async syncBulk({ records }) {
+    return _fetchJSON(sessionAttach({ route:'sync.bulk', payload: JSON.stringify(records || []) }));
+  },
 };

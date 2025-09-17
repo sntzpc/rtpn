@@ -211,16 +211,31 @@ function view() {
   </div>`;
 }
 
+function getUserDivisiSet(){
+  try{
+    const arr = JSON.parse(localStorage.getItem(Keys.USER_DIVISI) || '[]');
+    return new Set(Array.isArray(arr) ? arr.map(String) : []);
+  }catch(_){ return new Set(); }
+}
+
+
 // ==== Auto-suggest blok ====
 function getVisibleBlocks() {
-  const role = localStorage.getItem(Keys.ROLE) || '-';
-  const nik = localStorage.getItem(Keys.NIK) || '';
-  let blok = LStore.getArr(Keys.MASTER_BLOK) || [];
+  const role = (localStorage.getItem(Keys.ROLE) || '-').toLowerCase();
+  const nik  = localStorage.getItem(Keys.NIK) || '';
+  let blok   = LStore.getArr(Keys.MASTER_BLOK) || [];
+
   if (role === 'mandor' && nik) {
     blok = blok.filter(b => String(b.mandor_nik) === String(nik));
+  } else if (role === 'asisten') {
+    // Batasi ke divisi milik Asisten
+    const divSet = getUserDivisiSet(); // isi dari Keys.USER_DIVISI
+    if (divSet.size) blok = blok.filter(b => divSet.has(String(b.divisi_id)));
   }
+  // admin: tidak dibatasi
   return blok;
 }
+
 
 // ==== Auto-suggest blok (label: "Nama Blok | xx,xx Ha") ====
 function fillBlockDatalist() {
