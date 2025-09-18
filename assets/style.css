@@ -532,3 +532,41 @@ td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
   .kpi > .card > b{ font-size: 12px; }
   .kpi > .card .badge{ font-size: 12px; padding: 5px 9px; }
 }
+
+/* === KPI: paksa jadi ribbon (semua ukuran layar) === */
+.kpi.kpi--ribbon{
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 4px;
+  scrollbar-width: none;
+}
+.kpi.kpi--ribbon::-webkit-scrollbar{ display: none; }
+
+.kpi.kpi--ribbon > .card{
+  flex: 0 0 auto;                 /* jadi pill yang inline */
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;           /* bentuk pil */
+  min-width: max-content;
+  text-align: left;
+}
+
+.kpi.kpi--ribbon > .card > b{
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: .2px;
+  line-height: 1.2;
+}
+
+.kpi.kpi--ribbon > .card .badge{
+  font-size: 13px;
+  font-weight: 700;
+  padding: 6px 10px;
+  border-radius: 999px;
+  line-height: 1;
+}

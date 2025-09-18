@@ -1,6 +1,7 @@
 // =====================
 // File: features/sync-view.js (bulk sync + fallback)
 // =====================
+import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $ } from '../core/utils.js';
 import { Keys, LStore } from '../core/storage.js';
 import { SyncState, getRecord } from '../core/sync.js';
@@ -494,7 +495,7 @@ async function doSync(localIds){
 
 // ---- Mount ----
 function bind(){
-  _loadState(); renderSyncRibbon(); renderSyncTable();
+  _loadState(); renderSyncRibbon(); renderSyncTable(); runOfflineWarmupOnce();
 
   $('#btn-export').addEventListener('click', _exportCSV);
   $('#f-status').addEventListener('change', ()=>{ SV_PAGE=1; renderSyncRibbon(); renderSyncTable(); _saveState(); });
@@ -513,7 +514,7 @@ function bind(){
   });
 
     // Online/offline → update ribbon
-  window.addEventListener('online',  renderSyncRibbon);
+  window.addEventListener('online', () => { renderSyncRibbon(); runOfflineWarmupOnce();});
   window.addEventListener('offline', renderSyncRibbon);
 }
 

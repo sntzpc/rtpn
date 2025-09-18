@@ -1,6 +1,7 @@
 // =====================
 // File: features/report.js
 // =====================
+import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $, fmtDateISO, ensureNumber } from '../core/utils.js';
 import { Keys, LStore } from '../core/storage.js';
 
@@ -835,7 +836,7 @@ if (roleUser === 'asisten'){
 
 // ===== Bind & Render =====
 function bind(){
-  fillSelectors();
+  fillSelectors(); runOfflineWarmupOnce();
   const role = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
   if (role==='asisten'){ $('#wrap-paraf').style.display='block'; }
 

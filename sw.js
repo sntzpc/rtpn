@@ -1,5 +1,5 @@
 /* sw.js — Pusingan Panen: cache app-shell + CDN libs (offline-first) */
-const VERSION = 'pp2-sw-v1.0.4';
+const VERSION = 'pp2-sw-v1.0.6';
 const APP_SHELL = [
   './',
   './index.html',
