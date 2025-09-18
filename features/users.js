@@ -207,7 +207,7 @@ function renderTable(){
             <td>${u.role||''}</td>
             <td>${u.status||'active'}</td>
             <td class="aksi">
-              <div class="cell-actions" style="display:flex; gap:6px; flex-wrap:wrap">
+              <div class="cell-actions">
                 <button data-action="passwd" data-nik="${u.nik}">Ubah Pass</button>
                 <button data-action="delete" data-nik="${u.nik}" class="danger">Hapus</button>
               </div>

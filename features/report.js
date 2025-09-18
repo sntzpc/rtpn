@@ -206,13 +206,6 @@ function view(){
   min-width: 1000px;
 }
 
-/* Filter & KPI biar tidak mendorong lebar layar di mobile */
-@media (max-width: 768px){
-  #report-out .card > .row{ flex-wrap: wrap; gap:8px; }     /* bar filter bisa patah baris */
-  #report-out .card > .row .col{ flex:1 1 140px; min-width:140px; }
-  #report-out .kpi{display:grid; grid-template-columns:repeat(auto-fit, minmax(140px,1fr)); gap:8px;
-}
-
 /* (opsional) tambahkan baris ini kalau masih ada dorongan horizontal */
 html, body, #app{ max-width:100%; overflow-x:hidden; }
 

@@ -428,6 +428,16 @@ td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
 }
 
 /* ===== KPI ringkas: label di atas, angka di bawah, rata tengah ===== */
+
+.kpi > .card{
+  border: 1px solid var(--border);
+  background: var(--table-cell-bg);
+}
+.kpi > .card .badge{
+  background: var(--primary-ghost, rgba(0,0,0,.06));
+  border: 1px solid var(--border);
+}
+
 .kpi {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -457,23 +467,6 @@ td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
   border-radius: 12px;        /* sudut membulat */
 }
 
-    /* KPI Grid (Stats) */
-    .kpi{
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-      gap: 8px;
-      margin: .5rem 0;
-    }
-    .kpi > .card{
-      display:flex; flex-direction:column; align-items:center; justify-content:center;
-      text-align:center; padding:10px;
-    }
-    .kpi > .card b{ display:block; margin-bottom:6px; }
-    .kpi .badge{ font-variant-numeric: tabular-nums; }
-    @media (max-width: 480px){
-      .kpi{ grid-template-columns: repeat(2, minmax(0,1fr)); }
-    }
-
 /* === Monitor: baris paraf di bagian bawah tabel === */
 .moni .paraf-row td { background:#f80707; }
 .moni .paraf-cell { min-width:36px; }
@@ -488,3 +481,54 @@ td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
 }
 .moni .pf-btn[disabled]{ opacity:.5; cursor:not-allowed; }
 .moni .pf-on .pf-btn{ font-weight:700; }
+
+/* ===== KPI: mode ribbon di mobile/tablet kecil ===== */
+@media (max-width: 768px){  /* dulu 576px → perlebar supaya HP lebar & landscape ikut ribbon */
+  .kpi{
+    display: flex !important;          /* kunci override dari grid */
+    flex-wrap: nowrap;
+    gap: 10px;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+    scrollbar-width: none;
+  }
+  .kpi::-webkit-scrollbar{ display: none; }
+
+  .kpi > .card{
+    flex: 0 0 auto;
+    display: inline-flex !important;   /* kalahkan .kpi .card { display:flex } dan layout grid lama */
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    min-width: max-content;
+    text-align: left;
+  }
+
+  .kpi > .card > b{
+    margin: 0;
+    font-size: 13px;
+    line-height: 1.2;
+  }
+
+  .kpi > .card .badge{
+    font-size: 13px;
+    font-weight: 700;
+    padding: 6px 10px;
+    border-radius: 999px;
+    line-height: 1;
+  }
+}
+
+/* HP mungil → tetap rapi bila space sempit */
+@media (max-width: 360px){
+  .kpi > .card{
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+  .kpi > .card > b{ font-size: 12px; }
+  .kpi > .card .badge{ font-size: 12px; padding: 5px 9px; }
+}

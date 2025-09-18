@@ -1,5 +1,5 @@
 // =====================
-// File: features/settings.js (admin role + guard + JSONP fallback tetap)
+// File: features/settings.js (guard + JSONP fallback + Backup/Restore XLSX)
 // =====================
 import { $, ensureNumber, hash } from '../core/utils.js';
 import { Keys, LStore } from '../core/storage.js';
@@ -86,89 +86,39 @@ function view(){
     </div>
   </div>
 
-  <!-- SECTION: khusus ADMIN (kelola user) -->
-  <div id="section-admin" style="display:none">
-    <div class="card" id="section-users">
-      <div class="row" style="align-items:center;gap:8px">
-        <h3 style="margin:0">Kelola User (Admin)</h3>
-        <span class="badge">Total: <b id="user-count">0</b></span>
-        <button id="btn-refresh-users">Refresh</button>
-      </div>
+  <!-- SECTION: BACKUP & RESTORE (Backup: semua role, Restore: Admin/Asisten) -->
+  <div class="card" id="section-backup">
+    <h3>Backup & Restore (Lokal)</h3>
+    <div class="row" style="gap:8px; align-items:center; flex-wrap:wrap">
+      <button id="btn-export-xlsx">Export Data Lokal (.xlsx)</button>
 
-      <div class="row" style="margin-top:8px">
-        <div class="col"><input id="u-nik"  placeholder="NIK" /></div>
-        <div class="col"><input id="u-nama" placeholder="Nama" /></div>
-        <div class="col">
-          <select id="u-role">
-            <option value="mandor">Mandor</option>
-            <option value="asisten">Asisten</option>
-            <option value="admin">Admin</option>
-          </select>
-        </div>
-        <div class="col">
-          <button id="u-add">Tambah User (pwd: user123)</button>
-        </div>
-      </div>
-
-      <div id="user-list" style="margin-top:10px"></div>
+      <input type="file" id="file-restore" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" style="display:none" />
+      <button id="btn-import-xlsx">Restore dari .xlsx</button>
+      <span class="muted" id="restore-note">(Restore hanya untuk Admin & Asisten)</span>
     </div>
   </div>
   `;
 }
 
-// ---------- Bind ----------
+// ---------- Section visibility ----------
 function ensureAsistenSections(){
   const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
   const wrap = document.getElementById('section-asisten');
   if (wrap) wrap.style.display = (role === 'asisten') ? 'block' : 'none';
 }
-function ensureAdminSections(){
+// Restore hanya untuk Admin/Asisten (backup boleh semua)
+function ensureBackupRestoreAccess(){
   const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
-  const wrap = document.getElementById('section-admin');
-  if (wrap) wrap.style.display = (role === 'admin') ? 'block' : 'none';
+  const btnImport = document.getElementById('btn-import-xlsx');
+  const note      = document.getElementById('restore-note');
+  if (!btnImport || !note) return;
+  const allowed = (role==='admin' || role==='asisten');
+  btnImport.style.display = allowed ? 'inline-block' : 'none';
+  note.style.display      = 'inline-block';
+  note.textContent        = allowed ? '(Restore oleh Admin/Asisten)' : '(Restore hanya untuk Admin & Asisten)';
 }
 
-function renderUserTable(users){
-  if (!Array.isArray(users) || users.length === 0){
-    $('#user-count').textContent = '0';
-    return `<i>Belum ada user</i>`;
-  }
-  $('#user-count').textContent = String(users.length);
-  return `
-  <table class="table">
-    <thead><tr>
-      <th>#</th><th>NIK</th><th>Nama</th><th>Role</th><th>Status</th><th class="aksi">Aksi</th>
-    </tr></thead>
-    <tbody>
-      ${users.map((u,i)=>`
-        <tr>
-          <td>${i+1}</td>
-          <td>${u.nik}</td>
-          <td>${u.name||''}</td>
-          <td>${u.role||''}</td>
-          <td>${u.status||'active'}</td>
-          <td class="aksi">
-            <div class="cell-actions">
-              <button data-action="passwd" data-nik="${u.nik}">Ubah Pass</button>
-              <button data-action="delete" data-nik="${u.nik}" class="danger">Hapus</button>
-            </div>
-          </td>
-        </tr>`).join('')}
-    </tbody>
-  </table>`;
-}
-async function refreshUsersUI(){
-  try{
-    const res = await API.userList();
-    if (!res.ok) throw new Error(res.error || 'Gagal memuat user');
-    const users = res.data?.users || [];
-    $('#user-list').innerHTML = renderUserTable(users);
-  }catch(e){
-    $('#user-list').innerHTML = `<div class="warn">${e.message||e}</div>`;
-  }
-}
-
-// XLSX Master Helpers (ringkas – sama seperti punyamu)
+// ====== XLSX Master Helpers ======
 const MASTER_HEADERS = {
   company:['id','nama'],
   estate:['id','nama','company_id'],
@@ -251,6 +201,145 @@ function downloadMasterTemplateXLSX(){
   XLSX.writeFile(wb, 'template_master.xlsx');
 }
 
+// ===== BACKUP / RESTORE XLSX (LocalStorage) =====
+const INPUT_HEADERS = [
+  'local_id','server_id','nik_mandor','nama_mandor','divisi_id','blok_id','kadvel_id',
+  'tanggal','luas_panen_ha','jjg','brondolan_kg','hk','tonase_ton',
+  'catatan','sync_status','created_at','updated_at'
+];
+const QUEUE_HEADERS = ['local_id'];
+const USER_DIVISI_HEADERS = ['divisi_id'];
+
+function _appendSheet(wb, sheetName, headers, rows){
+  const body = Array.isArray(rows) ? rows : [];
+  const aoa  = [headers, ...body.map(o => headers.map(h => (o && o[h] != null) ? o[h] : ''))];
+  const ws   = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = headers.map((h, i)=>{
+    const maxLen = Math.max(String(h).length, ...body.map(r => String(r && r[headers[i]] != null ? r[headers[i]] : '').length));
+    return { wch: Math.min(Math.max(10, maxLen + 2), 60) };
+  });
+  XLSX.utils.book_append_sheet(wb, ws, sheetName);
+}
+
+function exportLocalAsXLSX(){
+  if (typeof XLSX === 'undefined'){ showToast('Library XLSX belum termuat'); return; }
+  const pickArr = (k)=> LStore.getArr(k) || [];
+  const master  = {
+    company: pickArr(Keys.MASTER_COMPANY),
+    estate : pickArr(Keys.MASTER_ESTATE),
+    divisi : pickArr(Keys.MASTER_DIVISI),
+    kadvel : pickArr(Keys.MASTER_KADVEL),
+    blok   : pickArr(Keys.MASTER_BLOK),
+    mandor : pickArr(Keys.MASTER_MANDOR),
+    asisten: pickArr(Keys.MASTER_ASISTEN),
+    libur  : pickArr(Keys.MASTER_LIBUR),
+  };
+  const inputRecords = pickArr(Keys.INPUT_RECORDS);
+  const syncQueue    = pickArr(Keys.SYNC_QUEUE);
+  let userDivisi     = [];
+  try{
+    const raw = localStorage.getItem(Keys.USER_DIVISI) || '[]';
+    const arr = JSON.parse(raw);
+    if (Array.isArray(arr)) userDivisi = arr.map(x=>({divisi_id:String(x)}));
+  }catch(_){}
+
+  const wb = XLSX.utils.book_new();
+
+  const meta = [{
+    exported_at: new Date().toISOString(),
+    role: (localStorage.getItem(Keys.ROLE)||'-'),
+    nik : (localStorage.getItem(Keys.NIK)||''),
+    name: (localStorage.getItem(Keys.NAME)||''),
+    app : 'RTPN Local Backup'
+  }];
+  _appendSheet(wb, 'meta', Object.keys(meta[0]), meta);
+
+  const h = MASTER_HEADERS;
+  if (master.company.length) _appendSheet(wb, 'company', h.company, master.company);
+  if (master.estate.length)  _appendSheet(wb, 'estate',  h.estate,  master.estate);
+  if (master.divisi.length)  _appendSheet(wb, 'divisi',  h.divisi,  master.divisi);
+  if (master.kadvel.length)  _appendSheet(wb, 'kadvel',  h.kadvel,  master.kadvel);
+  if (master.blok.length)    _appendSheet(wb, 'blok',    h.blok,    master.blok);
+  if (master.mandor.length)  _appendSheet(wb, 'mandor',  h.mandor,  master.mandor);
+  if (master.asisten.length) _appendSheet(wb, 'asisten', h.asisten, master.asisten);
+  if (master.libur.length)   _appendSheet(wb, 'libur',   h.libur,   master.libur);
+
+  if (inputRecords.length) _appendSheet(wb, 'input_records', INPUT_HEADERS, inputRecords);
+  if (syncQueue.length)    _appendSheet(wb, 'sync_queue',    QUEUE_HEADERS, syncQueue.map(id=>({local_id:id})));
+  if (userDivisi.length)   _appendSheet(wb, 'user_divisi',   USER_DIVISI_HEADERS, userDivisi);
+
+  const fname = `backup-rtpn-${new Date().toISOString().slice(0,10)}.xlsx`;
+  XLSX.writeFile(wb, fname);
+  showToast('Backup .xlsx dibuat');
+}
+
+async function restoreFromBackupXLSX(file){
+  if (!file) throw new Error('Pilih file .xlsx');
+  const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
+  if (!(role==='admin' || role==='asisten')) throw new Error('Restore hanya untuk Admin & Asisten');
+
+  const buf = await file.arrayBuffer();
+  const wb  = XLSX.read(buf, { type:'array' });
+
+  const readSheet = (name, headers)=>{
+    const ws = _findSheet(wb, name);
+    if (!ws) return [];
+    return _sheetToObjsWithHeader(ws, headers);
+  };
+
+  const m = {};
+  Object.entries(MASTER_HEADERS).forEach(([sheet, headers])=>{
+    m[sheet] = readSheet(sheet, headers);
+  });
+  if (m.blok && m.blok.length){
+    m.blok.forEach(b=>{
+      b.luas_ha = Number(b.luas_ha||0);
+      b.bjr_kg_per_jjg = Number(b.bjr_kg_per_jjg||0);
+    });
+  }
+
+  const restoredInputs = readSheet('input_records', INPUT_HEADERS).map(r=>({
+    local_id: r.local_id || '',
+    server_id: r.server_id || '',
+    nik_mandor: r.nik_mandor || '',
+    nama_mandor: r.nama_mandor || '',
+    divisi_id: r.divisi_id || '',
+    blok_id: r.blok_id || '',
+    kadvel_id: r.kadvel_id || '',
+    tanggal: r.tanggal || '',
+    luas_panen_ha: ensureNumber(r.luas_panen_ha,0),
+    jjg: ensureNumber(r.jjg,0),
+    brondolan_kg: ensureNumber(r.brondolan_kg,0),
+    hk: ensureNumber(r.hk,0),
+    tonase_ton: ensureNumber(r.tonase_ton,0),
+    catatan: r.catatan || '',
+    sync_status: r.sync_status || 'synced',
+    created_at: r.created_at || '',
+    updated_at: r.updated_at || '',
+  }));
+  const restoredQueue = readSheet('sync_queue', QUEUE_HEADERS).map(r=> String(r.local_id||'') ).filter(Boolean);
+
+  const userDivisiRows = readSheet('user_divisi', USER_DIVISI_HEADERS);
+  const userDivisi = userDivisiRows.map(x=> String(x.divisi_id||'')).filter(Boolean);
+
+  Object.entries(m).forEach(([k, arr])=>{
+    if (Array.isArray(arr) && arr.length){
+      const map = {
+        company: Keys.MASTER_COMPANY, estate: Keys.MASTER_ESTATE, divisi: Keys.MASTER_DIVISI,
+        kadvel: Keys.MASTER_KADVEL, blok: Keys.MASTER_BLOK, mandor: Keys.MASTER_MANDOR,
+        asisten: Keys.MASTER_ASISTEN, libur: Keys.MASTER_LIBUR
+      };
+      if (map[k]) LStore.setArr(map[k], arr);
+    }
+  });
+  if (restoredInputs.length) LStore.setArr(Keys.INPUT_RECORDS, restoredInputs);
+  if (restoredQueue.length)  LStore.setArr(Keys.SYNC_QUEUE,    restoredQueue);
+  if (userDivisi.length) localStorage.setItem(Keys.USER_DIVISI, JSON.stringify(userDivisi));
+
+  showToast('Restore selesai. Memuat ulang…');
+  setTimeout(()=> location.reload(), 250);
+}
+
 // ---------- Bind utama ----------
 function bind(){
   // Prefill
@@ -269,8 +358,7 @@ function bind(){
   }
 
   ensureAsistenSections();
-  ensureAdminSections();
-  if ((localStorage.getItem(Keys.ROLE)||'-').toLowerCase() === 'admin') refreshUsersUI();
+  ensureBackupRestoreAccess();
 
   // LOGIN
   $('#btn-login').addEventListener('click', async ()=>{
@@ -291,7 +379,6 @@ function bind(){
       localStorage.setItem(Keys.NAME, res.data?.name || (role==='admin' ? 'Admin' : role==='asisten' ? 'Asisten' : 'Mandor'));
       localStorage.setItem(Keys.TOKEN, pass_hash);
 
-      // Jika Asisten → set divisi miliknya (dari master asisten jika ada)
       if (role==='asisten'){
         const arr = LStore.getArr(Keys.MASTER_ASISTEN) || [];
         const me  = arr.find(a => String(a.nik)===String(nik));
@@ -299,14 +386,13 @@ function bind(){
         localStorage.setItem(Keys.USER_DIVISI, JSON.stringify(divList));
       }
 
-      // Render header
       const roleLabel = role==='admin'?'Admin':role==='asisten'?'Asisten':'Mandor';
       const text = `Aktif: ${roleLabel} — ${localStorage.getItem(Keys.NAME)} (${nik})`;
       const elRole = document.getElementById('role-badge'); if (elRole) elRole.textContent = text;
       const elUser = document.getElementById('user-badge'); if (elUser) elUser.textContent = localStorage.getItem(Keys.NAME) || nik;
 
-      ensureAsistenSections(); ensureAdminSections();
-      if (role==='admin') await refreshUsersUI();
+      ensureAsistenSections();
+      ensureBackupRestoreAccess();
 
       $('#set-pass').value='';
       showToast('Login sukses');
@@ -332,10 +418,10 @@ function bind(){
       }catch(errFetch){
         if (!hasJSONPFallback()) throw errFetch;
         const r = await gasJSONP('master.pull', {
-  role, nik,
-  nik_auth: localStorage.getItem(Keys.NIK)||'',
-  token:    localStorage.getItem(Keys.TOKEN)||'',
-});
+          role, nik,
+          nik_auth: localStorage.getItem(Keys.NIK)||'',
+          token:    localStorage.getItem(Keys.TOKEN)||'',
+        });
         if (!r || !r.ok) throw new Error(r?.error || 'Gagal tarik master (JSONP)');
         data = r.data || {};
       }
@@ -381,10 +467,10 @@ function bind(){
       }catch(errFetch){
         if (!hasJSONPFallback()) throw errFetch;
         const r = await gasJSONP('actual.pull', {
-  role, nik, month, year,
-  nik_auth: localStorage.getItem(Keys.NIK)||'',
-  token:    localStorage.getItem(Keys.TOKEN)||'',
-});
+          role, nik, month, year,
+          nik_auth: localStorage.getItem(Keys.NIK)||'',
+          token:    localStorage.getItem(Keys.TOKEN)||'',
+        });
         if (!r || !r.ok) throw new Error(r?.error || 'Gagal download (JSONP)');
         rows = Array.isArray(r.data?.rows) ? r.data.rows : [];
       }
@@ -425,7 +511,6 @@ function bind(){
       const merged = [...map.values()].sort((a,b)=> a.tanggal>b.tanggal ? -1 : 1);
       LStore.setArr(Keys.INPUT_RECORDS, merged);
 
-      // bersihkan antrean sinkron untuk data yang sudah ada di server
       const q = new Set(LStore.getArr(Keys.SYNC_QUEUE)||[]);
       normalized.forEach(x=> q.delete(x.local_id));
       LStore.setArr(Keys.SYNC_QUEUE, [...q]);
@@ -462,7 +547,6 @@ function bind(){
       Progress.open({ title:'Upload Master', subtitle:'Membaca file…' });
       const parsed = await parseMasterXLSX(f);
 
-      // Validasi sheet BLOK minimal
       if (Array.isArray(parsed.blok)){
         for (const b of parsed.blok){
           if (!b.kadvel_id) throw new Error(`kadvel_id wajib pada blok ${b.kode||b.id||'(tanpa kode)'}`);
@@ -472,12 +556,10 @@ function bind(){
         }
       }
 
-      // Simpan lokal per sheet
       const parts = Object.keys(parsed);
       Progress.switchToDeterminate(parts.length+1);
       parts.forEach((k,i)=>{ Progress.update(`Menyimpan ${k}…`); applyMasterJSON({[k]:parsed[k]}); Progress.tick(i+1, parts.length+1); });
 
-      // Push ke server: sekali bulk
       Progress.update('Mengunggah (bulk)…');
       let pushed = false;
       try{
@@ -491,7 +573,6 @@ function bind(){
         const present = order.filter(k=> Array.isArray(parsed[k]) && parsed[k].length );
         Progress.switchToDeterminate(present.length);
 
-        // >>> credentials untuk server-side guard
         const nik_auth = localStorage.getItem(Keys.NIK)   || '';
         const token    = localStorage.getItem(Keys.TOKEN) || '';
 
@@ -515,61 +596,34 @@ function bind(){
     }
   });
 
-  // USERS (Admin)
-  $('#btn-refresh-users')?.addEventListener('click', refreshUsersUI);
-  $('#u-add').addEventListener('click', async ()=>{
-    const nik  = ($('#u-nik').value || '').trim();
-    const nama = ($('#u-nama').value||'').trim() || nik;
-    const role = ($('#u-role').value||'mandor').toLowerCase();
-    if (!nik) return showToast('Isi NIK terlebih dulu');
+  // === Backup/Restore ===
+  document.getElementById('btn-export-xlsx').addEventListener('click', ()=>{
     try{
-      spinner(true);
-      const pass_hash = hashPlain('user123');
-      const res = await API.userAdd({ nik, name:nama, role, pass_hash });
-      if (!res.ok) throw new Error(res.error || 'Gagal tambah user');
-      showToast('User disimpan (password default: user123)');
-      await refreshUsersUI();
+      Progress.open({ title:'Backup', subtitle:'Menyiapkan file .xlsx…' });
+      exportLocalAsXLSX();
     }catch(e){
-      showToast(e.message || 'Gagal tambah user');
+      showToast(e.message || 'Gagal membuat backup');
     }finally{
-      spinner(false);
+      Progress.close();
     }
   });
 
-  // Aksi tabel user
-  $('#user-list').addEventListener('click', async (ev)=>{
-    const btn = ev.target.closest('button[data-action]'); if (!btn) return;
-    const action = btn.getAttribute('data-action'); const nik = btn.getAttribute('data-nik');
-
-    if (action==='passwd'){
-      const newPass = prompt(`Masukkan password baru untuk NIK ${nik} (kosongkan untuk 'user123'):`) || 'user123';
-      try{
-        spinner(true);
-        const pass_hash = hashPlain(newPass);
-        const res = await API.userReset({ nik, pass_hash });
-        if (!res.ok) throw new Error(res.error || 'Gagal ubah password');
-        showToast('Password diperbarui');
-      }catch(e){
-        showToast(e.message || 'Gagal ubah password');
-      }finally{
-        spinner(false);
-      }
-    }
-
-    if (action==='delete'){
-      const ok = await confirmDialog(`Hapus user NIK ${nik}? Tindakan ini tidak dapat dibatalkan.`);
-      if (!ok) return;
-      try{
-        spinner(true);
-        const res = await API.userDelete({ nik });
-        if (!res.ok) throw new Error(res.error || 'Gagal hapus user');
-        showToast('User dihapus');
-        await refreshUsersUI();
-      }catch(e){
-        showToast(e.message || 'Gagal hapus user');
-      }finally{
-        spinner(false);
-      }
+  document.getElementById('btn-import-xlsx').addEventListener('click', ()=>{
+    const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
+    if (!(role==='admin' || role==='asisten')){ showToast('Restore hanya untuk Admin & Asisten'); return; }
+    document.getElementById('file-restore').click();
+  });
+  document.getElementById('file-restore').addEventListener('change', async (e)=>{
+    const f = e.target.files?.[0];
+    if (!f) return;
+    try{
+      Progress.open({ title:'Restore', subtitle:'Memproses .xlsx…' });
+      await restoreFromBackupXLSX(f);
+    }catch(err){
+      showToast(err.message || 'Gagal restore');
+    }finally{
+      Progress.close();
+      e.target.value = '';
     }
   });
 }

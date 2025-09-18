@@ -64,19 +64,43 @@ function _setBusyUI(busy){
 
 // ---- Data helpers ----
 function statusIcon(st){ return st==='synced' ? '✅' : (st==='edited' ? '⭕' : '⬜'); }
-function computeStats(){
-  const rows = LStore.getArr(Keys.INPUT_RECORDS) || [];
-  const total = rows.length;
-  const pending = rows.filter(r=>r.sync_status==='pending').length;
-  const edited  = rows.filter(r=>r.sync_status==='edited').length;
-  const synced  = rows.filter(r=>r.sync_status==='synced').length;
-  return { total, pending, edited, synced };
-}
 function _getSyncRows(filter='all'){
   let rows=(LStore.getArr(Keys.INPUT_RECORDS)||[]).slice();
   if (filter && filter!=='all') rows = rows.filter(r=> r.sync_status===filter);
   return rows.map(r=>({ ...r, _blokName:_blokNameById(r.blok_id) }));
 }
+
+// === Ribbon Online/Offline ===
+function getSyncStats(){
+  const rows = LStore.getArr(Keys.INPUT_RECORDS) || [];
+  const total   = rows.length;
+  const pending = rows.filter(r=>r.sync_status==='pending').length;
+  const edited  = rows.filter(r=>r.sync_status==='edited').length;
+  const synced  = rows.filter(r=>r.sync_status==='synced').length;
+  const online  = navigator.onLine;
+  return { total, pending, edited, synced, online };
+}
+
+function renderSyncRibbon(){
+  const el = document.getElementById('sync-status');
+  if (!el) return;
+  const { total, pending, edited, synced, online } = getSyncStats();
+  el.innerHTML = `
+    <div class="ribbon">
+      <div class="item"><span class="sync-dot ${online?'online':'offline'}"></span>${online?'Online':'Offline'}</div>
+      <div class="item">Total: <b>${total}</b></div>
+      <div class="item">Pending: <b>${pending}</b></div>
+      <div class="item">Edited: <b>${edited}</b></div>
+      <div class="item">Synced: <b>${synced}</b></div>
+    </div>
+  `;
+}
+
+function refresh(){
+  renderSyncTable();
+  renderSyncRibbon();
+}
+
 
 // ---- View ----
 function view(){
@@ -209,34 +233,41 @@ function renderSyncTable(){
   // table
   $('#sync-table').innerHTML = `
   <table class="table">
-    <thead>
-      <tr>
-        <th><input type="checkbox" id="ck-all"/></th>
-        <th>Status</th>
-        <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${SV_SORT_BY==='tanggal'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-        <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${SV_SORT_BY==='divisi_id'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-        <th class="sortable" data-sort="_blokName">Blok <span class="dir">${SV_SORT_BY==='_blokName'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-        <th class="num">Luas (Ha)</th>
-        <th class="num">JJG</th>
-        <th class="num">Br (kg)</th>
-        <th class="num">HK</th>
-        <th class="num">Tonase</th>
-      </tr>
-    </thead>
+<thead>
+  <tr>
+    <th><input type="checkbox" id="ck-all"/></th>
+    <th>Status</th>
+    <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${SV_SORT_BY==='tanggal'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+    <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${SV_SORT_BY==='divisi_id'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+    <th class="sortable" data-sort="_blokName">Blok <span class="dir">${SV_SORT_BY==='_blokName'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+    <th class="num">Luas (Ha)</th>
+    <th class="num">JJG</th>
+    <th class="num">Br (kg)</th>
+    <th class="num">HK</th>
+    <th class="num">Tonase</th>
+    <th class="aksi">Aksi</th>
+  </tr>
+</thead>
     <tbody>
       ${pageRows.map(r=>`
-        <tr>
-          <td><input type="checkbox" class="ck-row" data-id="${r.local_id}"/></td>
-          <td>${statusIcon(r.sync_status)}</td>
-          <td>${r.tanggal||''}</td>
-          <td>${r.divisi_id||''}</td>
-          <td>${r._blokName||''}</td>
-          <td class="num">${_f2(r.luas_panen_ha)}</td>
-          <td class="num">${_f2(r.jjg)}</td>
-          <td class="num">${_f2(r.brondolan_kg)}</td>
-          <td class="num">${_f2(r.hk)}</td>
-          <td class="num">${_f2(r.tonase_ton)}</td>
-        </tr>
+<tr>
+  <td><input type="checkbox" class="ck-row" data-id="${r.local_id}"/></td>
+  <td>${statusIcon(r.sync_status)}</td>
+  <td>${r.tanggal||''}</td>
+  <td>${r.divisi_id||''}</td>
+  <td>${r._blokName||''}</td>
+  <td class="num">${_f2(r.luas_panen_ha)}</td>
+  <td class="num">${_f2(r.jjg)}</td>
+  <td class="num">${_f2(r.brondolan_kg)}</td>
+  <td class="num">${_f2(r.hk)}</td>
+  <td class="num">${_f2(r.tonase_ton)}</td>
+  <td class="aksi">
+    <div class="cell-actions" style="display:flex;gap:6px">
+      <button data-edit="${r.local_id}">Edit</button>
+      <button data-push="${r.local_id}" class="primary">Push</button>
+    </div>
+  </td>
+</tr>
       `).join('')}
     </tbody>
   </table>`;
@@ -247,7 +278,7 @@ function renderSyncTable(){
       const k=th.getAttribute('data-sort');
       if (SV_SORT_BY===k) SV_SORT_DIR = (SV_SORT_DIR==='asc'?'desc':'asc');
       else { SV_SORT_BY=k; SV_SORT_DIR=(k==='tanggal'?'desc':'asc'); }
-      renderSyncTable(); _saveState();
+      renderSyncTable(); _saveState(); attachRowHandlers();
     };
   });
 
@@ -260,15 +291,45 @@ function renderSyncTable(){
   _renderPager(document.getElementById('sync-pager'), SV_PAGE, _lastPages);
 }
 
-function renderHeaderStats(){
-  const s = computeStats();
-  $('#sync-status').innerHTML = `
-    <div style="display:flex; gap:12px; flex-wrap:wrap">
-      <span class="badge">Total: <b>${s.total}</b></span>
-      <span class="badge">Pending: <b>${s.pending}</b></span>
-      <span class="badge">Edited: <b>${s.edited}</b></span>
-      <span class="badge">Synced: <b>${s.synced}</b></span>
-    </div>`;
+function attachRowHandlers(){
+  // master checkbox
+  const ckAll = document.getElementById('ck-all');
+  if (ckAll){
+    ckAll.addEventListener('change', e=>{
+      document.querySelectorAll('#sync-table .ck-row').forEach(ck=>{ ck.checked = e.target.checked; });
+    });
+  }
+
+  // Edit → arahkan ke halaman input (mode edit)
+  document.querySelectorAll('#sync-table button[data-edit]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-edit');
+      sessionStorage.setItem('edit.local_id', id);
+      location.hash = '#/input';
+    });
+  });
+
+  // Push satu baris
+  document.querySelectorAll('#sync-table button[data-push]').forEach(btn=>{
+    btn.addEventListener('click', async ()=>{
+      const id = btn.getAttribute('data-push');
+      const rec = getRecord(id);
+      if (!rec) return;
+      try{
+        _setBusyUI(true);
+        Progress.open({ title:'Sinkronisasi 1 data', total:1, subtitle: rec?.local_id || id });
+        await pushOne(rec);
+        showToast('Sinkron sukses');
+        Progress.tick(1,1);
+      }catch(e){
+        showToast(e.message||'Gagal sinkron');
+      }finally{
+        Progress.close();
+        _setBusyUI(false);
+        refresh(); // re-render tabel + ribbon
+      }
+    });
+  });
 }
 
 // ---- Sync logic ----
@@ -290,6 +351,58 @@ function _markSynced(localIds){
   const q = new Set(LStore.getArr(Keys.SYNC_QUEUE)||[]);
   localIds.forEach(id=> q.delete(id));
   LStore.setArr(Keys.SYNC_QUEUE, [...q]);
+}
+
+async function pushOne(rec){
+  if (!rec) throw new Error('Data tidak ditemukan');
+  if (!navigator.onLine && !hasJSONPFallback()) throw new Error('Tidak ada koneksi internet');
+
+  // bikin key singkat (FNVa-like) sesuai pola bulk
+  const s = `${rec.nik_mandor||''}|${rec.tanggal||''}|${rec.blok_id||''}`;
+  let h = 0x811c9dc5 >>> 0;
+  for (let i=0; i<s.length; i++){ h ^= s.charCodeAt(i); h = (h + (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)) >>> 0; }
+  const key = ('0000000'+h.toString(16)).slice(-8);
+
+  // check exists
+  let exists = false;
+  try{
+    const ch = await API.checkKey({ key });
+    if (!ch || !ch.ok) throw new Error(ch?.error || 'cek gagal');
+    exists = !!(ch.data && ch.data.exists);
+  }catch(errCheck){
+    if (!hasJSONPFallback()) throw errCheck;
+    const rj = await gasJSONP('pusingan.check', { key });
+    if (!rj || !rj.ok) throw new Error(rj?.error || 'cek(JSONP) gagal');
+    exists = !!(rj.data && rj.data.exists);
+  }
+
+  // insert/update
+  if (exists){
+    try{
+      const up = await API.pushUpdate({ key, record: rec });
+      if (!up || !up.ok) throw new Error(up?.error || 'update gagal');
+    }catch(errUpd){
+      if (!hasJSONPFallback()) throw errUpd;
+      const rj = await gasJSONP('pusingan.update', { key, payload: JSON.stringify(rec) });
+      if (!rj || !rj.ok) throw new Error(rj?.error || 'update(JSONP) gagal');
+    }
+  }else{
+    try{
+      const ins = await API.pushInsert({ record: rec });
+      if (!ins || !ins.ok) throw new Error(ins?.error || 'insert gagal');
+    }catch(errIns){
+      if (!hasJSONPFallback()) throw errIns;
+      const rj = await gasJSONP('pusingan.insert', { payload: JSON.stringify(rec) });
+      if (!rj || !rj.ok) throw new Error(rj?.error || 'insert(JSONP) gagal');
+    }
+  }
+
+  // Tandai synced & simpan lokal + dequeue
+  rec.sync_status = 'synced';
+  const list = LStore.getArr(Keys.INPUT_RECORDS) || [];
+  const idx = list.findIndex(r=> r.local_id === rec.local_id);
+  if (idx >= 0){ list[idx] = rec; LStore.setArr(Keys.INPUT_RECORDS, list); }
+  SyncState.dequeue(rec.local_id);
 }
 
 async function syncBulk(records){
@@ -375,16 +488,16 @@ async function doSync(localIds){
   }finally{
     Progress.close();
     _setBusyUI(false);
-    renderHeaderStats(); renderSyncTable();
+    renderSyncRibbon(); renderSyncTable();
   }
 }
 
 // ---- Mount ----
 function bind(){
-  _loadState(); renderHeaderStats(); renderSyncTable();
+  _loadState(); renderSyncRibbon(); renderSyncTable();
 
   $('#btn-export').addEventListener('click', _exportCSV);
-  $('#f-status').addEventListener('change', ()=>{ SV_PAGE=1; renderHeaderStats(); renderSyncTable(); _saveState(); });
+  $('#f-status').addEventListener('change', ()=>{ SV_PAGE=1; renderSyncRibbon(); renderSyncTable(); _saveState(); });
   $('#sv-search').addEventListener('input', (e)=>{ SV_Q=e.target.value||''; SV_PAGE=1; renderSyncTable(); _saveState(); });
   $('#sv-size').addEventListener('change', (e)=>{ SV_SIZE=+e.target.value||20; SV_PAGE=1; renderSyncTable(); _saveState(); });
 
@@ -398,6 +511,10 @@ function bind(){
     const ids = _collectSelectedLocalIds();
     doSync(ids);
   });
+
+    // Online/offline → update ribbon
+  window.addEventListener('online',  renderSyncRibbon);
+  window.addEventListener('offline', renderSyncRibbon);
 }
 
 export function render(app){ app.innerHTML = view(); bind(); }
