@@ -43,11 +43,29 @@ function view(){
   <div class="card">
     <div class="row" style="align-items:center;gap:10px;justify-content:space-between">
       <h2 style="margin:0">Kelola User</h2>
-      <div class="row" style="gap:8px">
-        <button id="btn-refresh" title="Muat ulang">Refresh</button>
-        <button id="btn-export">Export CSV</button>
-        <button class="primary" id="btn-add">Tambah User</button>
-      </div>
+<div class="ribbon tools">
+  <button id="btn-refresh" class="icon-btn" title="Muat ulang" aria-label="Muat ulang">
+    <!-- refresh -->
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M17.65 6.35A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.76-4.24L14 8h6V2l-2.34 2.34z"/>
+    </svg>
+    <span class="sr-only">Refresh</span>
+  </button>
+  <button id="btn-export" class="icon-btn" title="Export CSV" aria-label="Export CSV">
+    <!-- download -->
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 3v10.59l3.3-3.3 1.4 1.42L12 17.41l-4.7-4.7 1.4-1.42 3.3 3.3V3h2zM5 19h14v2H5z"/>
+    </svg>
+    <span class="sr-only">Export CSV</span>
+  </button>
+  <button id="btn-add" class="icon-btn primary" title="Tambah User" aria-label="Tambah User">
+    <!-- plus -->
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M11 5h2v6h6v2h-6v6h-2v-6H5v-2h6z"/>
+    </svg>
+    <span class="sr-only">Tambah User</span>
+  </button>
+</div>
     </div>
     <div id="user-stats" style="margin-top:6px"></div>
   </div>
@@ -171,11 +189,17 @@ function renderStats(){
     m[r] = (m[r]||0)+1;
     return m;
   }, {});
-  const roles = ['admin','asisten','mandor'];
+
+  const items = [
+    {label:'Total',   val: total},
+    {label:'admin',   val: byRole['admin']   || 0},
+    {label:'asisten', val: byRole['asisten'] || 0},
+    {label:'mandor',  val: byRole['mandor']  || 0},
+  ];
+
   $('#user-stats').innerHTML = `
-    <div style="display:flex; gap:10px; flex-wrap:wrap">
-      <span class="badge">Total: <b>${total}</b></span>
-      ${roles.map(r=>`<span class="badge">${r}: <b>${byRole[r]||0}</b></span>`).join('')}
+    <div class="ribbon chips">
+      ${items.map(x=>`<span class="chip">${x.label}: <b>${x.val}</b></span>`).join('')}
     </div>`;
 }
 

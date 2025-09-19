@@ -533,40 +533,36 @@ td:nth-last-child(-n+3), th:nth-last-child(-n+3) { text-align: right; }
   .kpi > .card .badge{ font-size: 12px; padding: 5px 9px; }
 }
 
-/* === KPI: paksa jadi ribbon (semua ukuran layar) === */
-.kpi.kpi--ribbon{
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 10px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  padding-bottom: 4px;
-  scrollbar-width: none;
+/* ==== Ribbon & Icon Buttons ==== */
+.ribbon{
+  display:flex; gap:8px; align-items:center;
+  overflow-x:auto; padding:4px 2px;
+  -webkit-overflow-scrolling: touch; scroll-snap-type: x mandatory;
 }
-.kpi.kpi--ribbon::-webkit-scrollbar{ display: none; }
-
-.kpi.kpi--ribbon > .card{
-  flex: 0 0 auto;                 /* jadi pill yang inline */
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;           /* bentuk pil */
-  min-width: max-content;
-  text-align: left;
+.ribbon::-webkit-scrollbar{ display:none; }
+.icon-btn{
+  flex:0 0 auto; scroll-snap-align:start;
+  display:inline-flex; align-items:center; justify-content:center;
+  width:40px; height:40px; border-radius:999px;
+  border:1px solid var(--border); background:var(--table-cell-bg); color:var(--text);
+  box-shadow: inset 0 -1px 0 rgba(0,0,0,.04);
 }
+.icon-btn:hover{ filter: brightness(1.08); }
+.icon-btn.primary{ background: var(--primary); color:#fff; border-color: var(--primary); }
+.icon-btn svg{ width:22px; height:22px; fill: currentColor; }
 
-.kpi.kpi--ribbon > .card > b{
-  margin: 0;
-  font-size: 13px;
-  letter-spacing: .2px;
-  line-height: 1.2;
+/* ==== Chips untuk statistik (geser kiri/kanan) ==== */
+#user-stats .chips{ display:flex; gap:8px; }
+.chip{
+  flex:0 0 auto; scroll-snap-align:start;
+  background: var(--table-cell-bg); color: var(--text);
+  border:1px solid var(--border); border-radius:999px;
+  padding:6px 10px; font-size:12px; line-height:1;
 }
+.chip b{ margin-left:4px; }
 
-.kpi.kpi--ribbon > .card .badge{
-  font-size: 13px;
-  font-weight: 700;
-  padding: 6px 10px;
-  border-radius: 999px;
-  line-height: 1;
+/* Aksesibilitas teks tersembunyi di ikon */
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden;
+  clip:rect(0,0,0,0); white-space:nowrap; border:0;
 }
