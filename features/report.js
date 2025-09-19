@@ -549,6 +549,47 @@ function _compareByBlokId(a, b){
   return Araw.localeCompare(Braw, undefined, { numeric: true, sensitivity: 'base' });
 }
 
+// ==== Kadvel ordering: D1..D6 ====
+function _kadvelCodeById(kid){
+  const kadvelList = LStore.getArr(Keys.MASTER_KADVEL) || [];
+  const k = kadvelList.find(x => String(x.id) === String(kid));
+  // ambil yang paling representatif sebagai "kode"
+  return (k?.kode || k?.nama || k?.id || '').toString().toUpperCase().trim();
+}
+
+// urutan baku D1..D6
+const _KADVEL_ORDER = ['D1','D2','D3','D4','D5','D6'];
+
+function _kadvelOrderIndex(kid){
+  const code = _kadvelCodeById(kid);
+  // cocokkan persis dulu
+  let idx = _KADVEL_ORDER.indexOf(code);
+  if (idx >= 0) return idx;
+
+  // fallback: jika nama seperti "D3 KADVEL TIMUR" → ambil D3 di depan
+  const m = /^D(\d{1,2})\b/.exec(code);
+  if (m){
+    const n = Number(m[1]);
+    if (n>=1 && n<=_KADVEL_ORDER.length) return n-1;
+  }
+
+  // yang tak dikenal ditaruh di belakang
+  return 999;
+}
+
+// comparator untuk Object.keys(group).sort(_compareKadvelId)
+function _compareKadvelId(a, b){
+  const ia = _kadvelOrderIndex(a);
+  const ib = _kadvelOrderIndex(b);
+  if (ia !== ib) return ia - ib;
+
+  // kalau sama-sama tak dikenal → fallback alfabetis by label
+  const la = _kadvelCodeById(a);
+  const lb = _kadvelCodeById(b);
+  return la.localeCompare(lb, undefined, { numeric:true, sensitivity:'base' });
+}
+
+
 function monitorHTML(m, y, mode, key){
   const nDays = monthDays(y, m);
   const holidays = holidaysSet(y, m);
@@ -611,10 +652,8 @@ function monitorHTML(m, y, mode, key){
   let grandTotal = 0, grandLuas = 0;
 
   // group by kadvel
-  const group = {};
-  visibleBlok.forEach(b=> (group[b.kadvel_id||'NA'] ||= []).push(b));
+  const sectionRows = Object.keys(group).sort(_compareKadvelId).map(kid=>{
 
-  const sectionRows = Object.keys(group).sort().map(kid=>{
     // >>>> Per KADVEL: urutkan berdasarkan blok_id
     const rowsHTML = group[kid]
       .slice()
