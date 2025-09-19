@@ -335,21 +335,21 @@ function renderRingkas(){
   const key = (mode==='mandor') ? $('#f-mandor').value : $('#f-divisi').value;
 
   // data mentah
-const baseRows = filterData(m, y, mode, key).map(r => {
-  const jjg = _num(r.jjg);
-  const bjr = _resolveBJR(r);
-  const br  = _brondolKg(r);
-  const denomKg = jjg * bjr;
-  const lfPct = denomKg>0 ? (br/denomKg)*100 : 0;
+  const baseRows = filterData(m, y, mode, key).map(r => {
+    const jjg = _num(r.jjg);
+    const bjr = _resolveBJR(r);
+    const br  = _brondolKg(r);
+    const denomKg = jjg * bjr;
+    const lfPct = denomKg>0 ? (br/denomKg)*100 : 0;
 
-  return {
-    ...r,
-    _blokName: _blokNameById(r.blok_id),
-    _tonPerHK: _num(r.hk) > 0 ? (_num(r.tonase_ton)/_num(r.hk)) : 0,
-    _tonPerHa: _num(r.luas_panen_ha) > 0 ? (_num(r.tonase_ton)/_num(r.luas_panen_ha)) : 0,
-    _lfPct: lfPct
-  };
-});
+    return {
+      ...r,
+      _blokName: _blokNameById(r.blok_id),
+      _tonPerHK: _num(r.hk) > 0 ? (_num(r.tonase_ton)/_num(r.hk)) : 0,
+      _tonPerHa: _num(r.luas_panen_ha) > 0 ? (_num(r.tonase_ton)/_num(r.luas_panen_ha)) : 0,
+      _lfPct: lfPct
+    };
+  });
 
   // state UI
   let page = 1;
@@ -426,41 +426,41 @@ const baseRows = filterData(m, y, mode, key).map(r => {
 
     // table HTML
     elTable.innerHTML = `
-        <div class="h-scroll">
-    <table class="table">
-      <thead>
-        <tr>
-          <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${sortBy==='tanggal'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-          <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${sortBy==='divisi_id'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-          <th class="sortable" data-sort="_blokName">Blok <span class="dir">${sortBy==='_blokName'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
-          <th class="num">Luas (Ha)</th>
-          <th class="num">JJG</th>
-          <th class="num">Br (kg)</th>
-          <th class="num">HK</th>
-          <th class="num">Tonase</th>
-          <th class="num">%LF</th>
-          <th class="num">Ton/HK</th>
-          <th class="num">Ton/Ha</th>
-        </tr>
-      </thead>
-      <tbody>
-        ${pageRows.map(r=>`
-          <tr>
-            <td>${r.tanggal}</td>
-            <td>${r.divisi_id||''}</td>
-            <td>${r._blokName||''}</td>
-            <td class="num">${_f2(r.luas_panen_ha)}</td>
-            <td class="num">${_f2(r.jjg)}</td>
-            <td class="num">${_f2(r.brondolan_kg)}</td>
-            <td class="num">${_f2(r.hk)}</td>
-            <td class="num">${_f2(r.tonase_ton)}</td>
-            <td class="num">${_f2(r._lfPct)}</td>
-            <td class="num">${_f2(r._tonPerHK)}</td>
-            <td class="num">${_f2(r._tonPerHa)}</td>
-          </tr>`).join('')}
-      </tbody>
-    </table>
-  </div>
+      <div class="h-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${sortBy==='tanggal'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+              <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${sortBy==='divisi_id'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+              <th class="sortable" data-sort="_blokName">Blok <span class="dir">${sortBy==='_blokName'?(sortDir==='asc'?'▲':'▼'):''}</span></th>
+              <th class="num">Luas (Ha)</th>
+              <th class="num">JJG</th>
+              <th class="num">Br (kg)</th>
+              <th class="num">HK</th>
+              <th class="num">Tonase</th>
+              <th class="num">%LF</th>
+              <th class="num">Ton/HK</th>
+              <th class="num">Ton/Ha</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${pageRows.map(r=>`
+              <tr>
+                <td>${r.tanggal}</td>
+                <td>${r.divisi_id||''}</td>
+                <td>${r._blokName||''}</td>
+                <td class="num">${_f2(r.luas_panen_ha)}</td>
+                <td class="num">${_f2(r.jjg)}</td>
+                <td class="num">${_f2(r.brondolan_kg)}</td>
+                <td class="num">${_f2(r.hk)}</td>
+                <td class="num">${_f2(r.tonase_ton)}</td>
+                <td class="num">${_f2(r._lfPct)}</td>
+                <td class="num">${_f2(r._tonPerHK)}</td>
+                <td class="num">${_f2(r._tonPerHa)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
     `;
 
     // header click → sort
@@ -473,50 +473,50 @@ const baseRows = filterData(m, y, mode, key).map(r => {
       };
     });
 
-// pager (ellipsis rapi)
-renderPagerHorizontal(elPager, page, pages, (goto)=>{
-  page = goto;
-  apply();
-});
+    // pager (ellipsis rapi)
+    renderPagerHorizontal(elPager, page, pages, (goto)=>{
+      page = goto;
+      apply();
+    });
   }
 
   // pager helper
-function renderPagerHorizontal(container, p, pages, onChange){
-  const clamp = (n)=> Math.max(1, Math.min(pages, n));
-  const btn = (label, target, {active=false, disabled=false}={}) =>
-    `<button class="pager-btn ${active?'active':''}" ${disabled?'disabled':''} data-go="${disabled?'':target}">${label}</button>`;
-  const dots = `<span class="pager-ellipsis">…</span>`;
+  function renderPagerHorizontal(container, p, pages, onChange){
+    const clamp = (n)=> Math.max(1, Math.min(pages, n));
+    const btn = (label, target, {active=false, disabled=false}={}) =>
+      `<button class="pager-btn ${active?'active':''}" ${disabled?'disabled':''} data-go="${disabled?'':target}">${label}</button>`;
+    const dots = `<span class="pager-ellipsis">…</span>`;
 
-  const parts = [];
-  // prev
-  parts.push(btn('‹', clamp(p-1), {disabled: p<=1}));
+    const parts = [];
+    // prev
+    parts.push(btn('‹', clamp(p-1), {disabled: p<=1}));
 
-  if (pages <= 7){
-    for (let i=1;i<=pages;i++) parts.push(btn(String(i), i, {active: i===p}));
-  }else{
-    // 1 … (p-1, p, p+1) … last
-    parts.push(btn('1', 1, {active: p===1}));
-    if (p > 3) parts.push(dots);
+    if (pages <= 7){
+      for (let i=1;i<=pages;i++) parts.push(btn(String(i), i, {active: i===p}));
+    }else{
+      // 1 … (p-1, p, p+1) … last
+      parts.push(btn('1', 1, {active: p===1}));
+      if (p > 3) parts.push(dots);
 
-    const start = Math.max(2, p-1);
-    const end   = Math.min(pages-1, p+1);
-    for (let i=start; i<=end; i++) parts.push(btn(String(i), i, {active: i===p}));
+      const start = Math.max(2, p-1);
+      const end   = Math.min(pages-1, p+1);
+      for (let i=start; i<=end; i++) parts.push(btn(String(i), i, {active: i===p}));
 
-    if (p < pages-2) parts.push(dots);
-    parts.push(btn(String(pages), pages, {active: p===pages}));
-  }
-
-  // next
-  parts.push(btn('›', clamp(p+1), {disabled: p>=pages}));
-
-  container.innerHTML = `<div class="pager-bar">${parts.join('')}</div>`;
-  container.querySelectorAll('.pager-btn[data-go]').forEach(b=>{
-    const target = Number(b.getAttribute('data-go'));
-    if (!isNaN(target) && target>0){
-      b.addEventListener('click', ()=> onChange(target));
+      if (p < pages-2) parts.push(dots);
+      parts.push(btn(String(pages), pages, {active: p===pages}));
     }
-  });
-}
+
+    // next
+    parts.push(btn('›', clamp(p+1), {disabled: p>=pages}));
+
+    container.innerHTML = `<div class="pager-bar">${parts.join('')}</div>`;
+    container.querySelectorAll('.pager-btn[data-go]').forEach(b=>{
+      const target = Number(b.getAttribute('data-go'));
+      if (!isNaN(target) && target>0){
+        b.addEventListener('click', ()=> onChange(target));
+      }
+    });
+  }
 
   // initial events
   $('#rg-search').oninput = (e)=>{ q = e.target.value||''; page=1; apply(); };
@@ -537,6 +537,18 @@ function isoOf(dt){ const y=dt.getFullYear(), m=pad2(dt.getMonth()+1), d=pad2(dt
 function daysBetween(a,b){ return Math.round((a - b) / 86400000); } // a,b Date
 
 // ===== MONITORING (carry-over lintas bulan + warna streak) =====
+
+// >>>> PEMERINGKAT BLOK: gunakan blok_id (natural)
+function _compareByBlokId(a, b){
+  // dukung properti 'id' (objek master blok) atau 'blok_id' jika ada
+  const Araw = String(a?.id ?? a?.blok_id ?? '');
+  const Braw = String(b?.id ?? b?.blok_id ?? '');
+  // natural numeric jika keduanya numerik, fallback localeCompare numeric
+  const A = Number(Araw), B = Number(Braw);
+  if (Number.isFinite(A) && Number.isFinite(B)) return A - B;
+  return Araw.localeCompare(Braw, undefined, { numeric: true, sensitivity: 'base' });
+}
+
 function monitorHTML(m, y, mode, key){
   const nDays = monthDays(y, m);
   const holidays = holidaysSet(y, m);
@@ -585,7 +597,7 @@ function monitorHTML(m, y, mode, key){
     return true;
   });
 
-    // header tanggal (tampilkan 1..nDays; beri kelas 'wk' utk Minggu dan 'off' utk libur)
+  // header tanggal (tampilkan 1..nDays; beri kelas 'wk' utk Minggu dan 'off' utk libur)
   const daysHeader = Array.from({ length: nDays }, (_, i) => {
     const d = i + 1;
     const cls =
@@ -603,95 +615,96 @@ function monitorHTML(m, y, mode, key){
   visibleBlok.forEach(b=> (group[b.kadvel_id||'NA'] ||= []).push(b));
 
   const sectionRows = Object.keys(group).sort().map(kid=>{
-    const rowsHTML = group[kid].sort((a,b)=>{
-      const A=(a.kode||a.nama||a.id||'')+'';
-      const B=(b.kode||b.nama||b.id||'')+'';
-      return A.localeCompare(B);
-    }).map(b=>{
-      const name = b.nama || b.kode || b.id;
-      const luas = ensureNumber(b.luas_ha,0);
+    // >>>> Per KADVEL: urutkan berdasarkan blok_id
+    const rowsHTML = group[kid]
+      .slice()
+      .sort(_compareByBlokId)
+      .map(b=>{
+        const name = b.nama || b.kode || b.id;
+        const luas = ensureNumber(b.luas_ha,0);
 
-      // ----- CARRY-OVER: tentukan runBase (hari "0" terakhir run sebelum bulan ini) -----
-      const pset = panenSetMap.get(b.id) || new Set();
+        // ----- CARRY-OVER: tentukan runBase (hari "0" terakhir run sebelum bulan ini) -----
+        const pset = panenSetMap.get(b.id) || new Set();
 
-      // cari tanggal panen TERAKHIR sebelum tanggal 1 bulan ini
-      let lastPrevISO = null;
-      pset.forEach(t=>{
-        if (t < firstISO && (!lastPrevISO || t > lastPrevISO)) lastPrevISO = t;
-      });
+        // cari tanggal panen TERAKHIR sebelum tanggal 1 bulan ini
+        let lastPrevISO = null;
+        pset.forEach(t=>{
+          if (t < firstISO && (!lastPrevISO || t > lastPrevISO)) lastPrevISO = t;
+        });
 
-      // default runBase = tanggal 0 (hari terakhir bulan lalu): ini bikin 1 di tgl 1 jika benar2 tanpa sejarah
-      let runBase = dObj(y, m, 0);
+        // default runBase = tanggal 0 (hari terakhir bulan lalu)
+        let runBase = dObj(y, m, 0);
 
-      if (lastPrevISO){
-        // tarik mundur ke awal rangkaian panen yang mencakup lastPrevISO
-        let cur = parseISO(lastPrevISO);
-        while (true){
-          const prev = dObj(cur.getFullYear(), cur.getMonth()+1, cur.getDate()-1);
-          if (pset.has(isoOf(prev))){ cur = prev; continue; }
-          break;
-        }
-        runBase = cur; // hari panen pertama (=0) dari run sebelumnya
-      }
-
-      // panjang streak panen pada "hari 0" (untuk lintas bulan)
-      const day0 = dObj(y, m, 0);
-      const day0ISO = isoOf(day0);
-      let panenStreakLen = 0;
-      if (pset.has(day0ISO)){
-        // hitung berapa hari berturut-turut sampai day0
-        let cur = new Date(day0.getTime());
-        while (pset.has(isoOf(cur))){
-          panenStreakLen++;
-          cur.setDate(cur.getDate()-1);
-        }
-      }
-
-      // akumulator baris
-      let tot = 0;
-
-      const tds = Array.from({length:nDays}, (_,i)=>{
-        const d = i+1;
-
-        // stop di hari > lastPanenGlobal
-        if (lastPanenGlobal && d > lastPanenGlobal){
-          const clsTail = (sundays.has(d)?' wk':'') + (holidays.has(d)?' off':'');
-          return `<td class="${clsTail.trim()}"></td>`;
+        if (lastPrevISO){
+          // tarik mundur ke awal rangkaian panen yang mencakup lastPrevISO
+          let cur = parseISO(lastPrevISO);
+          while (true){
+            const prev = dObj(cur.getFullYear(), cur.getMonth()+1, cur.getDate()-1);
+            if (pset.has(isoOf(prev))){ cur = prev; continue; }
+            break;
+          }
+          runBase = cur; // hari panen pertama (=0) dari run sebelumnya
         }
 
-        const val = +(byBlokDay[b.id]?.[d]||0);
-        let cls = '';
-
-        if (val > 0){
-          // PANEN: hitung streak lintas bulan
-          const prevWasPanen = (i===0) ? pset.has(day0ISO) : (+(byBlokDay[b.id]?.[d-1]||0) > 0);
-          panenStreakLen = prevWasPanen ? (panenStreakLen+1) : 1;
-
-          // awal run baru → reset basis pusingan ke hari ini (0)
-          if (!prevWasPanen) runBase = dObj(y, m, d);
-
-          // warna: 1=full (hijau), 2=part (kuning), 3+=over (merah)
-          if (panenStreakLen === 1) cls += ' full';
-          else if (panenStreakLen === 2) cls += ' part';
-          else cls += ' over';
-
-          // jangan beri wk/off ke sel panen agar warna tidak ketimpa
-          grandPerDay[d-1] += val; tot += val;
-          return `<td class="${cls.trim()}"><span class="val">${f2(val)}</span></td>`;
-        }else{
-          // KOSONG: tampilkan angka pusingan; wk/off hanya untuk sel kosong
-          if (sundays.has(d)) cls+=' wk';
-          if (holidays.has(d)) cls+=' off';
-
-          const rot = daysBetween(dObj(y,m,d), runBase); // 1,2,3,… menerus dari bulan lalu
-          return `<td class="${cls.trim()}"><span class="rot-num">${rot}</span></td>`;
+        // panjang streak panen pada "hari 0" (untuk lintas bulan)
+        const day0 = dObj(y, m, 0);
+        const day0ISO = isoOf(day0);
+        let panenStreakLen = 0;
+        if (pset.has(day0ISO)){
+          // hitung berapa hari berturut-turut sampai day0
+          let cur = new Date(day0.getTime());
+          while (pset.has(isoOf(cur))){
+            panenStreakLen++;
+            cur.setDate(cur.getDate()-1);
+          }
         }
-      }).join('');
 
-      grandTotal += tot; grandLuas += luas;
-      const rotVal = (luas>0) ? (tot/luas) : 0;
+        // akumulator baris
+        let tot = 0;
 
-return `<tr>
+        const tds = Array.from({length:nDays}, (_,i)=>{
+          const d = i+1;
+
+          // stop di hari > lastPanenGlobal
+          if (lastPanenGlobal && d > lastPanenGlobal){
+            const clsTail = (sundays.has(d)?' wk':'') + (holidays.has(d)?' off':'');
+            return `<td class="${clsTail.trim()}"></td>`;
+          }
+
+          const val = +(byBlokDay[b.id]?.[d]||0);
+          let cls = '';
+
+          if (val > 0){
+            // PANEN: hitung streak lintas bulan
+            const prevWasPanen = (i===0) ? pset.has(day0ISO) : (+(byBlokDay[b.id]?.[d-1]||0) > 0);
+            panenStreakLen = prevWasPanen ? (panenStreakLen+1) : 1;
+
+            // awal run baru → reset basis pusingan ke hari ini (0)
+            if (!prevWasPanen) runBase = dObj(y, m, d);
+
+            // warna: 1=full (hijau), 2=part (kuning), 3+=over (merah)
+            if (panenStreakLen === 1) cls += ' full';
+            else if (panenStreakLen === 2) cls += ' part';
+            else cls += ' over';
+
+            // jangan beri wk/off ke sel panen agar warna tidak ketimpa
+            grandPerDay[d-1] += val; tot += val;
+            return `<td class="${cls.trim()}"><span class="val">${f2(val)}</span></td>`;
+          }else{
+            // KOSONG: tampilkan angka pusingan; wk/off hanya untuk sel kosong
+            if (sundays.has(d)) cls+=' wk';
+            if (holidays.has(d)) cls+=' off';
+
+            const rot = daysBetween(dObj(y,m,d), runBase); // 1,2,3,… menerus dari bulan lalu
+            return `<td class="${cls.trim()}"><span class="rot-num">${rot}</span></td>`;
+          }
+        }).join('');
+
+        grandTotal += tot; grandLuas += luas;
+        const rotVal = (luas>0) ? (tot/luas) : 0;
+
+        // >>> Tidak menampilkan blok_id; hanya nama/kode blok
+        return `<tr>
   <td class="kiri freeze1 w-kadvel">${kadvelName(kid)}</td>
   <td class="kiri headL freeze2 w-blok">${name}</td>
   <td class="freeze3 w-luas">${f2(luas)}</td>
@@ -699,7 +712,7 @@ return `<tr>
   <td>${f2(tot)}</td>
   <td>${f1(rotVal)}</td>
 </tr>`;
-    }).join('');
+      }).join('');
 
     // subtotal per kadvel
     const subPerDay = Array(nDays).fill(0);
@@ -713,7 +726,7 @@ return `<tr>
     const subTot = subPerDay.reduce((a,b)=>a+b,0);
     const subRot = subLuas>0 ? (subTot/subLuas) : 0;
 
-const subRow = `<tr class="sub">
+    const subRow = `<tr class="sub">
   <td class="kiri freeze1 w-kadvel2" colspan="2"><b>TOTAL ${kadvelName(kid)}</b></td>
   <td class="freeze3 w-luas"><b>${f2(subLuas)}</b></td>
   ${subPerDay.map((v,i)=>`<td class="${(sundays.has(i+1)?'wk':'')} ${holidays.has(i+1)?'off':''}">${v?f2(v):''}</td>`).join('')}
@@ -726,7 +739,7 @@ const subRow = `<tr class="sub">
 
   const grandRot = grandLuas>0 ? (grandTotal/grandLuas) : 0;
 
-const grandRow = `<tr class="grand">
+  const grandRow = `<tr class="grand">
   <td class="kiri freeze1 w-kadvel2" colspan="2"><b>GRAND TOTAL</b></td>
   <td class="freeze3 w-luas"><b>${f2(grandLuas)}</b></td>
   ${grandPerDay.map((v,i)=>`<td class="${(sundays.has(i+1)?'wk':'')} ${holidays.has(i+1)?'off':''}"><b>${v?f2(v):''}</b></td>`).join('')}
@@ -734,36 +747,35 @@ const grandRow = `<tr class="grand">
   <td><b>${f1(grandRot)}</b></td>
 </tr>`;
 
-// === Baris paraf (footer) ===
-const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
-const marked = pfMarkedSetMonth({ scope, key, y, m });
+  // === Baris paraf (footer) ===
+  const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
+  const marked = pfMarkedSetMonth({ scope, key, y, m });
 
-const parafCells = Array.from({length:nDays}, (_,i)=>{
-  const d   = i+1;
-  const iso = `${y}-${pad2(m)}-${pad2(d)}`;
-  const hasPanen = (grandPerDay[d-1] > 0); // aktif hanya jika ada panen pada hari tsb
-  const isOn = marked.has(iso);
-  const cls = `${(sundays.has(d)?'wk':'')} ${(holidays.has(d)?'off':'')} paraf-cell ${isOn?'pf-on':''}`;
+  const parafCells = Array.from({length:nDays}, (_,i)=>{
+    const d   = i+1;
+    const iso = `${y}-${pad2(m)}-${pad2(d)}`;
+    const hasPanen = (grandPerDay[d-1] > 0); // aktif hanya jika ada panen pada hari tsb
+    const isOn = marked.has(iso);
+    const cls = `${(sundays.has(d)?'wk':'')} ${(holidays.has(d)?'off':'')} paraf-cell ${isOn?'pf-on':''}`;
 
-  if (hasPanen){
-    return `<td class="${cls.trim()}">
+    if (hasPanen){
+      return `<td class="${cls.trim()}">
       <button type="button" class="pf-btn" data-iso="${iso}" aria-pressed="${isOn?'true':'false'}">${isOn?'✓':'○'}</button>
     </td>`;
-  }else{
-    return `<td class="${cls.trim()}"><span class="muted">—</span></td>`;
-  }
-}).join('');
+    }else{
+      return `<td class="${cls.trim()}"><span class="muted">—</span></td>`;
+    }
+  }).join('');
 
-// Kolom TOTAL & ROT di ujung → biarkan kosong
-const parafRow = `<tr class="paraf-row">
+  // Kolom TOTAL & ROT di ujung → biarkan kosong
+  const parafRow = `<tr class="paraf-row">
   <td class="kiri freeze1 w-kadvel2" colspan="2"><b>Paraf (Asisten)</b></td>
   <td class="freeze3 w-luas"></td>
   ${parafCells}
   <td></td><td></td>
 </tr>`;
 
-
-return `
+  return `
   <div class="card moni">
     <h3>Monitoring Pusingan Panen — Periode ${pad2(m)}/${y}</h3>
 
@@ -802,26 +814,25 @@ function renderMonitor(){
 
   container.innerHTML = monitorHTML(m, y, mode, key);   // render tabelnya dulu
 
-// === Toggle paraf di footer (hanya untuk role asisten) ===
-const roleUser = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
-const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
+  // === Toggle paraf di footer (hanya untuk role asisten) ===
+  const roleUser = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
+  const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
 
-const btns = container.querySelectorAll('.paraf-row .pf-btn[data-iso]');
-if (roleUser === 'asisten'){
-  btns.forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const iso = btn.getAttribute('data-iso');
-      const nextOn = btn.getAttribute('aria-pressed')!=='true';
-      pfToggle({ scope, key, dateISO: iso, on: nextOn });
-      btn.setAttribute('aria-pressed', nextOn?'true':'false');
-      btn.textContent = nextOn ? '✓' : '○';
-      btn.closest('td')?.classList.toggle('pf-on', nextOn);
+  const btns = container.querySelectorAll('.paraf-row .pf-btn[data-iso]');
+  if (roleUser === 'asisten'){
+    btns.forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const iso = btn.getAttribute('data-iso');
+        const nextOn = btn.getAttribute('aria-pressed')!=='true';
+        pfToggle({ scope, key, dateISO: iso, on: nextOn });
+        btn.setAttribute('aria-pressed', nextOn?'true':'false');
+        btn.textContent = nextOn ? '✓' : '○';
+        btn.closest('td')?.classList.toggle('pf-on', nextOn);
+      });
     });
-  });
-}else{
-  btns.forEach(b=> b.setAttribute('disabled', 'disabled'));
-}
-
+  }else{
+    btns.forEach(b=> b.setAttribute('disabled', 'disabled'));
+  }
 
   // Sisipkan tombol "Cetak PDF (A4)" setelah tabel terpasang
   if (typeof enableReportPrint === 'function'){
@@ -1002,7 +1013,7 @@ function _buildPrintHTML({rootEl, headerInfo}){
   // hapus sticky behavior yang mungkin tertinggal (safety)
   clonedTable.querySelectorAll('th').forEach(th=> th.style.position = 'static');
 
-const legendHTML = `
+  const legendHTML = `
   <div class="print-legend">
     <span><i class="sw full">■</i>Hijau = Hari Ke-1</span>
     <span><i class="sw part">■</i>Kuning = Hari ke-2</span>
