@@ -652,6 +652,10 @@ function monitorHTML(m, y, mode, key){
   let grandTotal = 0, grandLuas = 0;
 
   // group by kadvel
+  // group by kadvel
+const group = {};
+visibleBlok.forEach(b=> (group[b.kadvel_id||'NA'] ||= []).push(b));
+
   const sectionRows = Object.keys(group).sort(_compareKadvelId).map(kid=>{
 
     // >>>> Per KADVEL: urutkan berdasarkan blok_id
