@@ -178,7 +178,7 @@ function applyMasterJSON(j){
 function downloadMasterTemplateXLSX(){
   if (typeof XLSX === 'undefined'){ alert('Library XLSX belum termuat'); return; }
   const samples = {
-    company:[['PT1','PT BUANA TUNAS SEJAHTERA']],
+    company:[['PT1','PT SENTRA KARYA MANUNGGAL']],
     estate :[['EST1','Seriang Estate','PT1']],
     divisi :[['DIV1','SRIE1','SRIE1','EST1']],
     kadvel :[['K1','D-1','DIV1']],
