@@ -123,8 +123,22 @@ function view(){
           <option value="divisi">Per Divisi</option>
         </select>
       </div>
-      <div class="col" id="wrap-mandor"><label>Mandor</label><select id="f-mandor"></select></div>
-      <div class="col" id="wrap-divisi" style="display:none"><label>Divisi</label><select id="f-divisi"></select></div>
+            <div class="col" id="wrap-mandor">
+        <label>Mandor</label>
+        <div class="as-wrap">
+          <input id="f-mandor-input" class="form-control" placeholder="Ketik nama/nik mandor…" autocomplete="off"/>
+          <input type="hidden" id="f-mandor"/>
+          <div class="as-list" id="f-mandor-list" hidden></div>
+        </div>
+      </div>
+      <div class="col" id="wrap-divisi" style="display:none">
+        <label>Divisi</label>
+        <div class="as-wrap">
+          <input id="f-divisi-input" class="form-control" placeholder="Ketik nama/kode divisi…" autocomplete="off"/>
+          <input type="hidden" id="f-divisi"/>
+          <div class="as-list" id="f-divisi-list" hidden></div>
+        </div>
+      </div>
       <div class="col"><button class="primary" id="btn-run">Tampilkan</button></div>
     </div>
   </div>
@@ -210,6 +224,19 @@ function view(){
 /* (opsional) tambahkan baris ini kalau masih ada dorongan horizontal */
 html, body, #app{ max-width:100%; overflow-x:hidden; }
 
+/* ===== Auto-suggest (as-*) ===== */
+.as-wrap{ position:relative; }
+.as-list{
+  position:absolute; left:0; right:0; top:100%;
+  background:var(--card-bg,#fff); border:1px solid var(--border,#ddd);
+  border-radius:8px; margin-top:4px; z-index:10; max-height:220px; overflow:auto;
+  box-shadow:0 6px 18px rgba(0,0,0,.08);
+}
+.as-item{ padding:8px 10px; cursor:pointer; display:flex; justify-content:space-between; gap:8px; }
+.as-item b{ font-weight:600; }
+.as-item .sub{ color:#6b7280; font-size:12px; }
+.as-item:hover, .as-item.active{ background:#f3f4f6; }
+
   </style>
   `;
 }
@@ -226,33 +253,161 @@ function yearOptions(){
   return arr.map(y=>`<option value="${y}">${y}</option>`).join('');
 }
 
-function fillSelectors(){
-  $('#f-year').innerHTML = yearOptions();
-
-  const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
-  const divisiAll  = (LStore.getArr(Keys.MASTER_DIVISI)||[]);
-  const mandorAll  = (LStore.getArr(Keys.MASTER_MANDOR)||[]);
-  let   divisiOpts = divisiAll;
-  let   mandorOpts = mandorAll;
+// --- Build masters sesuai role (batasi divisi utk Asisten) ---
+function _mastersForPickers(){
+  const role = (localStorage.getItem(Keys.ROLE)||localStorage.getItem('pp2:session.role')||'-').toLowerCase();
+  const divisiAll = (LStore.getArr(Keys.MASTER_DIVISI)||[]);
+  const mandorAll = (LStore.getArr(Keys.MASTER_MANDOR)||[]);
+  let divisi = divisiAll;
+  let mandor = mandorAll;
 
   if (role === 'asisten'){
-    // Batasi ke divisi milik Asisten
     let divSet = new Set();
     try{
       const arr = JSON.parse(localStorage.getItem(Keys.USER_DIVISI)||'[]');
       if (Array.isArray(arr)) divSet = new Set(arr.map(String));
     }catch(_){}
     if (divSet.size){
-      divisiOpts = divisiAll.filter(d => divSet.has(String(d.id)));
-      mandorOpts = mandorAll.filter(m => divSet.has(String(m.divisi_id)));
+      divisi = divisiAll.filter(d => divSet.has(String(d.id)));
+      mandor = mandorAll.filter(m => divSet.has(String(m.divisi_id)));
     }
   }
+  return { divisi, mandor };
+}
 
-  $('#f-mandor').innerHTML = mandorOpts
-    .map(m=>`<option value="${m.nik}">${m.nama||m.nik} (${m.nik})</option>`).join('');
+// --- Mini komponen autosuggest generic ---
+function setupAutoSuggest({ inputEl, hiddenEl, listEl, source, getKey, getLabel, onPick }){
+  let cursor = -1;             // index item aktif
+  let filtered = [];           // hasil filter terakhir
 
-  $('#f-divisi').innerHTML = divisiOpts
-    .map(d=>`<option value="${d.id}">${d.nama||d.kode||d.id}</option>`).join('');
+  function renderList(items){
+    if (!items.length){ listEl.hidden = true; listEl.innerHTML=''; cursor=-1; return; }
+    listEl.innerHTML = items.map((it,i)=>(
+      `<div class="as-item${i===cursor?' active':''}" data-idx="${i}">
+         <div><b>${getLabel(it).main}</b></div>
+         <div class="sub">${getLabel(it).sub||''}</div>
+       </div>`
+    )).join('');
+    listEl.hidden = false;
+    // bind click
+    listEl.querySelectorAll('.as-item').forEach(div=>{
+      div.onclick = ()=> pick(items[Number(div.dataset.idx)||0]);
+    });
+  }
+
+  function pick(item){
+    const key = getKey(item);
+    const lab = getLabel(item);
+    inputEl.value = lab.main;       // tampilkan label utama
+    hiddenEl.value = key;           // simpan key untuk logic lama
+    listEl.hidden = true; listEl.innerHTML = ''; cursor = -1;
+    if (typeof onPick === 'function') onPick(item, key);
+  }
+
+  inputEl.addEventListener('input', ()=>{
+    const q = (inputEl.value||'').trim().toLowerCase();
+    hiddenEl.value = ''; // reset sampai user memilih valid
+    if (!q){ renderList([]); return; }
+    filtered = source.filter(it=>{
+      const lab = getLabel(it);
+      return (lab.main||'').toLowerCase().includes(q) || (lab.sub||'').toLowerCase().includes(q);
+    }).slice(0,50);
+    cursor = -1;
+    renderList(filtered);
+  });
+
+  inputEl.addEventListener('keydown', (e)=>{
+    if (listEl.hidden) return;
+    if (e.key === 'ArrowDown'){ e.preventDefault(); cursor = Math.min(cursor+1, filtered.length-1); renderList(filtered); }
+    else if (e.key === 'ArrowUp'){ e.preventDefault(); cursor = Math.max(cursor-1, 0); renderList(filtered); }
+    else if (e.key === 'Enter'){ if (cursor>=0){ e.preventDefault(); pick(filtered[cursor]); } }
+    else if (e.key === 'Escape'){ listEl.hidden = true; }
+  });
+
+  // close on blur (plus fallback resolve jika unik)
+  inputEl.addEventListener('blur', ()=>{
+    setTimeout(()=>{
+      if (!hiddenEl.value){
+        // fallback: jika hanya 1 match, pilih otomatis
+        if (filtered.length===1) pick(filtered[0]);
+      }
+      listEl.hidden = true;
+    }, 120);
+  });
+
+  // klik di luar dropdown menutup list
+  document.addEventListener('click', (e)=>{
+    if (!listEl.contains(e.target) && e.target !== inputEl){
+      listEl.hidden = true;
+    }
+  });
+  if (!hiddenEl.value){
+  const exact = filtered.find(it=>{
+    const lab = getLabel(it);
+    const main = (lab.main||'').toLowerCase();
+    const sub  = (lab.sub||'').toLowerCase();
+    const raw  = (inputEl.value||'').trim().toLowerCase();
+    return main === raw || sub === raw || String(getKey(it)).toLowerCase() === raw;
+  });
+  if (exact) pick(exact);
+}
+}
+
+function initAutoSuggestPickers(){
+  const { mandor, divisi } = _mastersForPickers();
+  // (Opsional) Set default pertama jika dibutuhkan:
+try{
+  const mode = $('#f-mode').value;
+  if (mode === 'mandor'){
+    const src = _mastersForPickers().mandor||[];
+    if (src[0]){
+      $('#f-mandor-input').value = (src[0].nama||src[0].nik);
+      $('#f-mandor').value = String(src[0].nik);
+    }
+  } else if (mode === 'divisi'){
+    const src = _mastersForPickers().divisi||[];
+    if (src[0]){
+      $('#f-divisi-input').value = (src[0].nama||src[0].kode||src[0].id);
+      $('#f-divisi').value = String(src[0].id);
+    }
+  }
+}catch(_){}
+
+  // Index divisi untuk menampilkan sublabel mandor (kode divisi)
+  const divById = new Map((divisi||[]).map(d => [String(d.id), d]));
+
+  // === Mandor ===
+  setupAutoSuggest({
+    inputEl : $('#f-mandor-input'),
+    hiddenEl: $('#f-mandor'),
+    listEl  : $('#f-mandor-list'),
+    source  : mandor || [],
+    getKey  : (m) => String(m.nik),
+    getLabel: (m) => {
+      const d = divById.get(String(m.divisi_id));
+      const dLbl = d ? (d.kode || d.nama || d.id) : (m.divisi_id || '');
+      return { main: `${m.nama||m.nik} (${m.nik})`, sub: dLbl ? `Divisi: ${dLbl}` : '' };
+    },
+    onPick  : ()=>{} // no-op
+  });
+
+  // === Divisi ===
+  setupAutoSuggest({
+    inputEl : $('#f-divisi-input'),
+    hiddenEl: $('#f-divisi'),
+    listEl  : $('#f-divisi-list'),
+    source  : divisi || [],
+    getKey  : (d) => String(d.id),
+    getLabel: (d) => ({ main: `${d.nama||d.kode||d.id}`, sub: d.kode && d.nama ? d.kode : '' }),
+    onPick  : ()=>{}
+  });
+}
+
+
+function fillSelectors(){
+  // Tahun tetap dari data aktual
+  $('#f-year').innerHTML = yearOptions();
+  // Mandor & Divisi sekarang di-init lewat initAutoSuggestPickers()
 }
 
 
@@ -858,7 +1013,7 @@ function renderMonitor(){
   container.innerHTML = monitorHTML(m, y, mode, key);   // render tabelnya dulu
 
   // === Toggle paraf di footer (hanya untuk role asisten) ===
-  const roleUser = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
+  const roleUser = (localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-').toLowerCase();
   const scope = (mode==='mandor' ? 'mandoran' : 'divisi');
 
   const btns = container.querySelectorAll('.paraf-row .pf-btn[data-iso]');
@@ -889,8 +1044,14 @@ function renderMonitor(){
 
 
 // ===== Bind & Render =====
-function bind(){
-  fillSelectors(); runOfflineWarmupOnce();
+ async function bind(){
+  fillSelectors();
+  const maybePromise = runOfflineWarmupOnce();
+  // Aman untuk sync/async:
+  if (maybePromise && typeof maybePromise.then === 'function'){
+    try{ await maybePromise; }catch(_){}
+  }
+  initAutoSuggestPickers();
   const role = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
   if (role==='asisten'){ $('#wrap-paraf').style.display='block'; }
 
@@ -899,10 +1060,20 @@ function bind(){
     const v = $('#f-mode').value;
     $('#wrap-mandor').style.display = (v==='mandor')?'block':'none';
     $('#wrap-divisi').style.display = (v==='divisi')?'block':'none';
+    // reset nilai saat ganti mode
+    $('#f-mandor').value = ''; $('#f-mandor-input').value = '';
+    $('#f-divisi').value = ''; $('#f-divisi-input').value = '';
   });
 
   $('#btn-run').addEventListener('click', ()=>{
     const v = $('#f-view').value;
+    // Guard: pastikan key-nya terisi
+    const mode = $('#f-mode').value;
+    const key  = mode==='mandor' ? $('#f-mandor').value : $('#f-divisi').value;
+    if (!key){
+      if (typeof showToast === 'function') showToast('Pilih dari daftar terlebih dulu (klik pada auto-suggest).');
+      return;
+    }
     if (v==='monitor') renderMonitor();
     else renderRingkas();
   });
