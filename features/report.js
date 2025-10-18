@@ -1160,10 +1160,18 @@ function _resolveCompanyNameForEstate(estateObj, companies){
   return '';
 }
 
+function _estateFromDivisiId(divisiId, estates, divisi){
+  if (!divisiId) return null;
+  const d = (divisi||[]).find(x => String(x.id) === String(divisiId));
+  if (!d) return null;
+  const e = (estates||[]).find(e => String(e.id) === String(d.estate_id));
+  return e || null;
+}
+
+
 // -- helper ambil estate dari pilihan mode/key --
 function _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokList }){
   if (mode === 'divisi'){
-    // cari divisi → estate_id → estate
     const d = divisi.find(x => String(x.id) === String(key));
     if (!d) return null;
     const e = estates.find(e => String(e.id) === String(d.estate_id));
@@ -1171,7 +1179,14 @@ function _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokLi
   }
 
   if (mode === 'mandor'){
-    // kumpulkan estate_id dari semua blok di bawah mandor tsb
+    // 1) Coba lewat mapping mandor → divisi → estate (paling akurat untuk header)
+    const mdr = mandor.find(x => String(x.nik) === String(key));
+    if (mdr && mdr.divisi_id){
+      const viaDiv = _estateFromDivisiId(String(mdr.divisi_id), estates, divisi);
+      if (viaDiv) return viaDiv;
+    }
+
+    // 2) Fallback: kumpulkan estate dari blok di bawah mandor tsb
     const estateIds = new Set(
       (blokList||[])
         .filter(b => String(b.mandor_nik) === String(key))
@@ -1183,15 +1198,14 @@ function _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokLi
       const e = estates.find(e => String(e.id) === String(onlyId));
       return e || null;
     }
-    // Tidak unik → tidak bisa disimpulkan
-    return null;
+    return null; // multi-estate/tidak bisa simpulkan
   }
 
-  // mode lain: kalau hanya ada 1 estate di master, pakai itu
+  // Mode lain: kalau hanya ada 1 estate di master, pakai itu
   if (estates && estates.length === 1) return estates[0];
-
   return null;
 }
+
 
 // -- helper render info header (ambil dari master + filter yang dipakai) --
 function _buildHeaderInfo({m,y,mode,key}){
@@ -1202,10 +1216,10 @@ function _buildHeaderInfo({m,y,mode,key}){
   const mandor    = LStore.getArr(Keys.MASTER_MANDOR)  || [];
   const blokList  = LStore.getArr(Keys.MASTER_BLOK)    || [];
 
-  // ===== Tentukan entity terpilih (estate/divisi/mandor) =====
+  // Coba tebak estate dulu (fungsi ini sudah ditingkatkan untuk mode mandor)
   let estateObj = _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokList });
 
-  // Nama2 untuk header
+  // Nama yang akan diisi ke header
   let companyName = _resolveCompanyNameForEstate(estateObj, companies);
   let estateName  = estateObj ? (estateObj.nama || estateObj.kode || estateObj.id || '') : '';
   let divisiName  = '';
@@ -1214,15 +1228,36 @@ function _buildHeaderInfo({m,y,mode,key}){
 
   if (mode === 'divisi'){
     const d = divisi.find(x => String(x.id) === String(key));
-    divisiName = d ? (d.nama || d.kode || d.id || '') : '';
+    if (d){
+      divisiName = d.nama || d.kode || d.id || '';
+      // estate belum ketemu? isi dari divisi
+      if (!estateObj){
+        estateObj  = estates.find(e => String(e.id) === String(d.estate_id)) || null;
+        estateName = estateObj ? (estateObj.nama || estateObj.kode || estateObj.id || '') : estateName;
+        companyName = _resolveCompanyNameForEstate(estateObj, companies) || companyName;
+      }
+    }
   } else if (mode === 'mandor'){
     const mdr = mandor.find(x => String(x.nik) === String(key));
-    mandorName = mdr ? (mdr.nama || mdr.nik || '') : '';
+    if (mdr){
+      mandorName = mdr.nama || mdr.nik || '';
+      // Isi Divisi dari master mandor
+      if (mdr.divisi_id){
+        const d = divisi.find(x => String(x.id) === String(mdr.divisi_id));
+        if (d){
+          divisiName = d.nama || d.kode || d.id || '';
+          // Estate belum ada? isi dari divisi
+          if (!estateObj){
+            estateObj  = estates.find(e => String(e.id) === String(d.estate_id)) || null;
+            estateName = estateObj ? (estateObj.nama || estateObj.kode || estateObj.id || '') : estateName;
+            companyName = _resolveCompanyNameForEstate(estateObj, companies) || companyName;
+          }
+        }
+      }
+    }
 
-    // Jika estate belum tertebak (mis. mandor lintas estate), biarkan kosong.
-    // (Opsi: Anda bisa tampilkan 'Multi-Estate' jika estateIds.size>1)
   } else {
-    // mode lain / ringkas-all: jika estate tunggal di master, gunakan perusahaan & nama estate itu
+    // mode lain / default: kalau master hanya 1 estate, pakai itu
     if (!estateObj && estates.length === 1){
       estateObj  = estates[0];
       estateName = estateObj.nama || estateObj.kode || estateObj.id || '';
@@ -1231,7 +1266,7 @@ function _buildHeaderInfo({m,y,mode,key}){
   }
 
   return {
-    company: companyName || '',   // ← Dinamis berdasar estate terpilih
+    company: companyName || '',
     estateName,
     divisiName,
     kadvelName,
@@ -1241,6 +1276,7 @@ function _buildHeaderInfo({m,y,mode,key}){
     printedAt: new Date().toLocaleString('id-ID', { hour12:false })
   };
 }
+
 
 // -- gaya print (inject sekali saja) --
 function _ensurePrintStyleInjected(){
@@ -1341,8 +1377,8 @@ function _buildPrintHTML({rootEl, headerInfo}){
   </div>`;
 
   const metaLeft = [
-    headerInfo.company ? `<div><b>Perusahaan:</b> ${headerInfo.company}</div>` : '',
-    headerInfo.estateName ? `<div><b>Estate:</b> ${headerInfo.estateName}</div>` : '',
+    headerInfo.company ? `<div><b></b> ${headerInfo.company}</div>` : '',
+    headerInfo.estateName ? `<div><b></b> ${headerInfo.estateName}</div>` : '',
     headerInfo.divisiName ? `<div><b>Divisi:</b> ${headerInfo.divisiName}</div>` : '',
     headerInfo.kadvelName ? `<div><b>Kadvel:</b> ${headerInfo.kadvelName}</div>` : '',
     headerInfo.mandorName ? `<div><b>Mandor:</b> ${headerInfo.mandorName}</div>` : '',
