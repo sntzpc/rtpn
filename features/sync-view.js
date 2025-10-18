@@ -1,5 +1,6 @@
 // =====================
-// File: features/sync-view.js (bulk sync + fallback)
+// File: features/sync-view.js
+// Fitur: Daftar antrian & riwayat sync (local-first) + push/sync
 // =====================
 import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $ } from '../core/utils.js';
@@ -8,6 +9,7 @@ import { SyncState, getRecord } from '../core/sync.js';
 import { API } from '../core/api.js';
 import { Progress } from '../core/progress.js';
 
+// ---------- Util tampilan ----------
 function _blokNameById(id){
   const list = LStore.getArr(Keys.MASTER_BLOK) || [];
   const b = list.find(x => String(x.id) === String(id));
@@ -15,7 +17,53 @@ function _blokNameById(id){
 }
 function _f2(n){ const v = Number(n); return Number.isFinite(v) ? v.toFixed(2) : ''; }
 
-// ---- JSONP fallback mini ----
+// ---------- Auth & izin ----------
+function _auth(){
+  try{
+    const s = (window.SESSION && SESSION.profile && SESSION.profile()) || {};
+    const nik = s.nik || localStorage.getItem(Keys.NIK) || localStorage.getItem('pp2:session.nik') || '';
+    const token = s.token || localStorage.getItem(Keys.TOKEN) || localStorage.getItem('pp2:session.token') || '';
+    const role = String((s.role || localStorage.getItem('pp2:session.role') || '')).toLowerCase();
+    return { nik, token, role };
+  }catch(_){ return { nik:'', token:'', role:'' }; }
+}
+function _authParams(){ const { nik, token } = _auth(); return { nik_auth: nik, token }; }
+
+function _asistenDivisiSet(){
+  const { nik, role } = _auth();
+  if (role !== 'asisten') return new Set();
+  const rows = (LStore.getArr(Keys.MASTER_ASISTEN) || []);
+  return new Set(rows.filter(a => String(a.nik)===String(nik))
+                     .map(a => String(a.divisi_id||'')).filter(Boolean));
+}
+
+// Hanya ASISTEN boleh EDIT; Mandor tidak boleh EDIT sama sekali
+function _canEdit(rec){
+  const { role } = _auth();
+  if (role !== 'asisten') return false;
+  const allow = _asistenDivisiSet();
+  if (!allow.size) return true;                 // longgar jika mapping belum diisi
+  return allow.has(String(rec.divisi_id||''));  // ketat berdasarkan divisi yang dipegang
+}
+
+// PUSH: 
+//   - Asisten: boleh push dalam scope divisinya
+//   - Mandor: boleh push HANYA datanya sendiri & HANYA jika belum synced
+function _canPush(rec){
+  const { nik, role } = _auth();
+  if (role === 'asisten'){
+    const allow = _asistenDivisiSet();
+    if (!allow.size) return true;
+    return allow.has(String(rec.divisi_id||''));
+  }
+  if (role === 'mandor'){
+    if (String(rec.nik_mandor||'') !== String(nik)) return false;
+    return rec.sync_status !== 'synced';
+  }
+  return false;
+}
+
+// ---------- JSONP fallback anti-CORS ----------
 function _gasBase(){
   const base = ((typeof window!=='undefined' && window.GAS_BASE_URL) || localStorage.getItem('API_BASE') || '').replace(/\/$/,'');
   if (!base) throw new Error('JSONP base belum diset. Set window.GAS_BASE_URL atau localStorage "API_BASE".');
@@ -37,9 +85,10 @@ function gasJSONP(route, params={}){
   });
 }
 
-// ---- State UI ----
+// ---------- State UI ----------
 let SV_PAGE=1, SV_SIZE=20, SV_Q='', SV_SORT_BY='tanggal', SV_SORT_DIR='desc';
 const SV_STATE_KEY='syncView.state.v1';
+
 function _saveState(){
   try{
     const state={ page:SV_PAGE, size:SV_SIZE, q:SV_Q, sortBy:SV_SORT_BY, sortDir:SV_SORT_DIR, filter:($('#f-status')?.value||'all') };
@@ -63,7 +112,7 @@ function _setBusyUI(busy){
   document.querySelectorAll('#sync-table button, #sync-table input[type="checkbox"]').forEach(el=> el.disabled=SV_BUSY);
 }
 
-// ---- Data helpers ----
+// ---------- Data helpers ----------
 function statusIcon(st){ return st==='synced' ? '✅' : (st==='edited' ? '⭕' : '⬜'); }
 function _getSyncRows(filter='all'){
   let rows=(LStore.getArr(Keys.INPUT_RECORDS)||[]).slice();
@@ -71,7 +120,7 @@ function _getSyncRows(filter='all'){
   return rows.map(r=>({ ...r, _blokName:_blokNameById(r.blok_id) }));
 }
 
-// === Ribbon Online/Offline ===
+// ---------- Ribbon Online/Offline ----------
 function getSyncStats(){
   const rows = LStore.getArr(Keys.INPUT_RECORDS) || [];
   const total   = rows.length;
@@ -81,7 +130,6 @@ function getSyncStats(){
   const online  = navigator.onLine;
   return { total, pending, edited, synced, online };
 }
-
 function renderSyncRibbon(){
   const el = document.getElementById('sync-status');
   if (!el) return;
@@ -96,14 +144,9 @@ function renderSyncRibbon(){
     </div>
   `;
 }
+function refresh(){ renderSyncTable(); renderSyncRibbon(); }
 
-function refresh(){
-  renderSyncTable();
-  renderSyncRibbon();
-}
-
-
-// ---- View ----
+// ---------- View skeleton ----------
 function view(){
   return `
   <div class="card">
@@ -158,8 +201,9 @@ function view(){
   `;
 }
 
-// ---- Table render + pager ----
+// ---------- Table render + pager ----------
 let _lastPages=1;
+
 function _renderPager(container, page, pages){
   const clamp=n=>Math.max(1,Math.min(pages,n));
   const btn=(label,target,{active=false,disabled=false}={})=>`<button class="pager-btn ${active?'active':''}" ${disabled?'disabled':''} data-go="${disabled?'':target}">${label}</button>`;
@@ -179,8 +223,14 @@ function _renderPager(container, page, pages){
   parts.push(btn('›', clamp(page+1), {disabled:page>=pages}));
   container.innerHTML = `<div class="pager-bar">${parts.join('')}</div>`;
   container.querySelectorAll('.pager-btn[data-go]').forEach(b=>{
-    const target=Number(b.getAttribute('data-go')); if (!isNaN(target) && target>0){
-      b.addEventListener('click', ()=>{ SV_PAGE=target; renderSyncTable(); _saveState(); });
+    const target=Number(b.getAttribute('data-go')); 
+    if (!isNaN(target) && target>0){
+      b.addEventListener('click', ()=>{
+        SV_PAGE=target; 
+        renderSyncTable(); 
+        _saveState();
+        attachRowHandlers(); // penting: pasang handler ulang setelah render
+      });
     }
   });
 }
@@ -234,42 +284,48 @@ function renderSyncTable(){
   // table
   $('#sync-table').innerHTML = `
   <table class="table">
-<thead>
-  <tr>
-    <th><input type="checkbox" id="ck-all"/></th>
-    <th>Status</th>
-    <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${SV_SORT_BY==='tanggal'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-    <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${SV_SORT_BY==='divisi_id'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-    <th class="sortable" data-sort="_blokName">Blok <span class="dir">${SV_SORT_BY==='_blokName'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
-    <th class="num">Luas (Ha)</th>
-    <th class="num">JJG</th>
-    <th class="num">Br (kg)</th>
-    <th class="num">HK</th>
-    <th class="num">Tonase</th>
-    <th class="aksi">Aksi</th>
-  </tr>
-</thead>
+    <thead>
+      <tr>
+        <th><input type="checkbox" id="ck-all"/></th>
+        <th>Status</th>
+        <th class="sortable" data-sort="tanggal">Tanggal <span class="dir">${SV_SORT_BY==='tanggal'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+        <th class="sortable" data-sort="divisi_id">Divisi <span class="dir">${SV_SORT_BY==='divisi_id'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+        <th class="sortable" data-sort="_blokName">Blok <span class="dir">${SV_SORT_BY==='_blokName'?(SV_SORT_DIR==='asc'?'▲':'▼'):''}</span></th>
+        <th class="num">Luas (Ha)</th>
+        <th class="num">JJG</th>
+        <th class="num">Br (kg)</th>
+        <th class="num">HK</th>
+        <th class="num">Tonase</th>
+        <th class="aksi">Aksi</th>
+      </tr>
+    </thead>
     <tbody>
-      ${pageRows.map(r=>`
-<tr>
-  <td><input type="checkbox" class="ck-row" data-id="${r.local_id}"/></td>
-  <td>${statusIcon(r.sync_status)}</td>
-  <td>${r.tanggal||''}</td>
-  <td>${r.divisi_id||''}</td>
-  <td>${r._blokName||''}</td>
-  <td class="num">${_f2(r.luas_panen_ha)}</td>
-  <td class="num">${_f2(r.jjg)}</td>
-  <td class="num">${_f2(r.brondolan_kg)}</td>
-  <td class="num">${_f2(r.hk)}</td>
-  <td class="num">${_f2(r.tonase_ton)}</td>
-  <td class="aksi">
-    <div class="cell-actions" style="display:flex;gap:6px">
-      <button data-edit="${r.local_id}">Edit</button>
-      <button data-push="${r.local_id}" class="primary">Push</button>
-    </div>
-  </td>
-</tr>
-      `).join('')}
+      ${pageRows.map(r=>{
+        const canE = _canEdit(r);
+        const canP = _canPush(r);
+        const editAttr = canE ? '' : 'disabled title="Tidak berhak edit"';
+        const pushAttr = canP ? '' : 'disabled title="Tidak berhak push"';
+        return `
+          <tr>
+            <td><input type="checkbox" class="ck-row" data-id="${r.local_id}"/></td>
+            <td>${statusIcon(r.sync_status)}</td>
+            <td>${r.tanggal||''}</td>
+            <td>${r.divisi_id||''}</td>
+            <td>${r._blokName||''}</td>
+            <td class="num">${_f2(r.luas_panen_ha)}</td>
+            <td class="num">${_f2(r.jjg)}</td>
+            <td class="num">${_f2(r.brondolan_kg)}</td>
+            <td class="num">${_f2(r.hk)}</td>
+            <td class="num">${_f2(r.tonase_ton)}</td>
+            <td class="aksi">
+              <div class="cell-actions" style="display:flex;gap:6px">
+                <button data-edit="${r.local_id}" ${editAttr}>Edit</button>
+                <button data-push="${r.local_id}" class="primary" ${pushAttr}>Push</button>
+              </div>
+            </td>
+          </tr>
+        `;
+      }).join('')}
     </tbody>
   </table>`;
 
@@ -290,10 +346,14 @@ function renderSyncTable(){
 
   // pager
   _renderPager(document.getElementById('sync-pager'), SV_PAGE, _lastPages);
+
+  // pasang handler untuk tombol baris
+  attachRowHandlers();
 }
 
+// ---------- Handler tombol baris ----------
 function attachRowHandlers(){
-  // master checkbox
+  // master checkbox (extra guard — sudah di renderSyncTable juga)
   const ckAll = document.getElementById('ck-all');
   if (ckAll){
     ckAll.addEventListener('change', e=>{
@@ -301,21 +361,25 @@ function attachRowHandlers(){
     });
   }
 
-  // Edit → arahkan ke halaman input (mode edit)
+  // Edit → hanya asisten yang lolos _canEdit()
   document.querySelectorAll('#sync-table button[data-edit]').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const id = btn.getAttribute('data-edit');
+      const rec = getRecord(id);
+      if (!_canEdit(rec)) { showToast('Anda tidak berwenang mengedit baris ini'); return; }
+      // Info: jika sudah synced, asisten mengedit akan overwrite saat push (aman)
       sessionStorage.setItem('edit.local_id', id);
       location.hash = '#/input';
     });
   });
 
-  // Push satu baris
+  // Push satu baris → izin via _canPush()
   document.querySelectorAll('#sync-table button[data-push]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = btn.getAttribute('data-push');
       const rec = getRecord(id);
       if (!rec) return;
+      if (!_canPush(rec)) { showToast('Anda tidak berwenang push baris ini'); return; }
       try{
         _setBusyUI(true);
         Progress.open({ title:'Sinkronisasi 1 data', total:1, subtitle: rec?.local_id || id });
@@ -327,13 +391,13 @@ function attachRowHandlers(){
       }finally{
         Progress.close();
         _setBusyUI(false);
-        refresh(); // re-render tabel + ribbon
+        refresh(); // re-render
       }
     });
   });
 }
 
-// ---- Sync logic ----
+// ---------- Sync helpers ----------
 function _collectSelectedLocalIds(){
   return Array.from(document.querySelectorAll('.ck-row:checked')).map(x=> x.getAttribute('data-id'));
 }
@@ -354,51 +418,66 @@ function _markSynced(localIds){
   LStore.setArr(Keys.SYNC_QUEUE, [...q]);
 }
 
+// Simpan record lokal (dipakai saat menyetel server_key hasil insert)
+function _upsertLocalRecord(updated){
+  const list = LStore.getArr(Keys.INPUT_RECORDS) || [];
+  const idx = list.findIndex(r => r.local_id === updated.local_id);
+  if (idx >= 0) list[idx] = updated; else list.push(updated);
+  LStore.setArr(Keys.INPUT_RECORDS, list);
+}
+
+// ---------- Push satu record (cek-exists → update/insert) ----------
+// Penting: gunakan rec.server_key lama bila ada untuk mencegah duplikasi saat identitas berubah
 async function pushOne(rec){
   if (!rec) throw new Error('Data tidak ditemukan');
   if (!navigator.onLine && !hasJSONPFallback()) throw new Error('Tidak ada koneksi internet');
 
-  // bikin key singkat (FNVa-like) sesuai pola bulk
-  const s = `${rec.nik_mandor||''}|${rec.tanggal||''}|${rec.blok_id||''}`;
-  let h = 0x811c9dc5 >>> 0;
-  for (let i=0; i<s.length; i++){ h ^= s.charCodeAt(i); h = (h + (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)) >>> 0; }
-  const key = ('0000000'+h.toString(16)).slice(-8);
+  // 1) Utamakan server_key lama (jika sudah pernah synced)
+  let key = rec.server_key;
+  if (!key){
+    const s = `${rec.nik_mandor||''}|${rec.tanggal||''}|${rec.blok_id||''}`;
+    let h = 0x811c9dc5 >>> 0;
+    for (let i=0; i<s.length; i++){ h ^= s.charCodeAt(i); h = (h + (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)) >>> 0; }
+    key = ('0000000'+h.toString(16)).slice(-8);
+  }
 
-  // check exists
+  // 2) Cek eksistensi di server
   let exists = false;
   try{
-    const ch = await API.checkKey({ key });
+    const ch = await API.checkKey({ key, ..._authParams() }); // jika API.checkKey meneruskan param
     if (!ch || !ch.ok) throw new Error(ch?.error || 'cek gagal');
     exists = !!(ch.data && ch.data.exists);
   }catch(errCheck){
     if (!hasJSONPFallback()) throw errCheck;
-    const rj = await gasJSONP('pusingan.check', { key });
+    const rj = await gasJSONP('pusingan.check', { key, ..._authParams() });
     if (!rj || !rj.ok) throw new Error(rj?.error || 'cek(JSONP) gagal');
     exists = !!(rj.data && rj.data.exists);
   }
 
-  // insert/update
+  // 3) Insert/Update dgn auth; simpan server_key saat insert
   if (exists){
     try{
-      const up = await API.pushUpdate({ key, record: rec });
+      const up = await API.pushUpdate({ key, record: rec, ..._authParams() });
       if (!up || !up.ok) throw new Error(up?.error || 'update gagal');
     }catch(errUpd){
       if (!hasJSONPFallback()) throw errUpd;
-      const rj = await gasJSONP('pusingan.update', { key, payload: JSON.stringify(rec) });
+      const rj = await gasJSONP('pusingan.update', { key, payload: JSON.stringify(rec), ..._authParams() });
       if (!rj || !rj.ok) throw new Error(rj?.error || 'update(JSONP) gagal');
     }
   }else{
     try{
-      const ins = await API.pushInsert({ record: rec });
+      const ins = await API.pushInsert({ record: rec, ..._authParams() });
       if (!ins || !ins.ok) throw new Error(ins?.error || 'insert gagal');
+      rec.server_key = key; _upsertLocalRecord(rec);
     }catch(errIns){
       if (!hasJSONPFallback()) throw errIns;
-      const rj = await gasJSONP('pusingan.insert', { payload: JSON.stringify(rec) });
+      const rj = await gasJSONP('pusingan.insert', { payload: JSON.stringify(rec), ..._authParams() });
       if (!rj || !rj.ok) throw new Error(rj?.error || 'insert(JSONP) gagal');
+      rec.server_key = key; _upsertLocalRecord(rec);
     }
   }
 
-  // Tandai synced & simpan lokal + dequeue
+  // 4) Tandai synced & dequeue
   rec.sync_status = 'synced';
   const list = LStore.getArr(Keys.INPUT_RECORDS) || [];
   const idx = list.findIndex(r=> r.local_id === rec.local_id);
@@ -406,83 +485,39 @@ async function pushOne(rec){
   SyncState.dequeue(rec.local_id);
 }
 
+// ---------- Bulk sync (try bulk → fallback per-record JSONP) ----------
 async function syncBulk(records){
-  // coba bulk terlebih dahulu
   try{
-    const res = await API.syncBulk({ records });
+    const res = await API.syncBulk({ records, ..._authParams() });
     if (res && res.ok) return { ok:true };
     throw new Error(res?.error || 'Sync bulk gagal');
   }catch(errBulk){
-    // fallback per-record (check → insert/update) dengan JSONP bila perlu
-    let ok=0, fail=0;
+    let fail=0;
     for (const rec of records){
       try{
-        const key = await (async ()=>{
-          // serverKeyOf di core/sync.js = fnv1a(nik|tanggal|blok), kita ulang sederhana di sini
-          const s = `${rec.nik_mandor||''}|${rec.tanggal||''}|${rec.blok_id||''}`;
-          let h = 0x811c9dc5 >>> 0;
-          for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h + (h<<1)+(h<<4)+(h<<7)+(h<<8)+(h<<24)) >>> 0; }
-          return ('0000000'+h.toString(16)).slice(-8);
-        })();
-
-        // check
-        let exists = false;
-        try{
-          const ch = await API.checkKey({ key });
-          if (!ch || !ch.ok) throw new Error(ch?.error || 'cek gagal');
-          exists = !!(ch.data && ch.data.exists);
-        }catch(_errCheck){
-          if (!hasJSONPFallback()) throw _errCheck;
-          const rj = await gasJSONP('pusingan.check', { key });
-          if (!rj || !rj.ok) throw new Error(rj?.error || 'cek(JSONP) gagal');
-          exists = !!(rj.data && rj.data.exists);
-        }
-
-        // insert/update
-        if (exists){
-          try{
-            const up = await API.pushUpdate({ key, record: rec });
-            if (!up || !up.ok) throw new Error(up?.error || 'update failed');
-          }catch(_errUpd){
-            if (!hasJSONPFallback()) throw _errUpd;
-            const rj = await gasJSONP('pusingan.update', { key, payload: JSON.stringify(rec) });
-            if (!rj || !rj.ok) throw new Error(rj?.error || 'update(JSONP) gagal');
-          }
-        }else{
-          try{
-            const ins = await API.pushInsert({ record: rec });
-            if (!ins || !ins.ok) throw new Error(ins?.error || 'insert failed');
-          }catch(_errIns){
-            if (!hasJSONPFallback()) throw _errIns;
-            const rj = await gasJSONP('pusingan.insert', { payload: JSON.stringify(rec) });
-            if (!rj || !rj.ok) throw new Error(rj?.error || 'insert(JSONP) gagal');
-          }
-        }
-
-        ok++;
-      }catch(e){
-        fail++;
-      }
+        // gunakan pushOne supaya konsisten (server_key, auth, fallback)
+        await pushOne(rec);
+      }catch(e){ fail++; }
     }
     return (fail===0) ? { ok:true } : { ok:false, error:`Sebagian gagal (${fail})` };
   }
 }
 
+// ---------- Eksekusi sync ----------
 async function doSync(localIds){
   if (!localIds.length){ showToast('Pilih data terlebih dulu'); return; }
-  const records = _rowsByIds(localIds);
+  // filter lagi berdasarkan _canPush (supaya tombol "Sync Semua" patuh izin)
+  const records = _rowsByIds(localIds).filter(_canPush);
+  if (!records.length){ showToast('Tidak ada data yang boleh disinkron'); return; }
+
   _setBusyUI(true);
   Progress.open({ title:'Sinkronisasi', subtitle:'Mengirim data…' });
   Progress.switchToDeterminate(records.length);
 
-  let done=0;
   try{
     const res = await syncBulk(records);
-    done = records.length;
-    Progress.tick(done, records.length);
     if (!res || !res.ok) throw new Error(res?.error || 'Sync gagal');
-
-    _markSynced(localIds);
+    _markSynced(records.map(r=>r.local_id));
     showToast(`Sinkron sukses: ${records.length} baris`);
   }catch(e){
     showToast(e.message || 'Gagal sinkron sebagian/semua');
@@ -493,27 +528,34 @@ async function doSync(localIds){
   }
 }
 
-// ---- Mount ----
+// ---------- Mount ----------
 function bind(){
-  _loadState(); renderSyncRibbon(); renderSyncTable(); runOfflineWarmupOnce();
+  _loadState(); 
+  renderSyncRibbon(); 
+  renderSyncTable(); 
+  attachRowHandlers();               // penting: initial binding
+  runOfflineWarmupOnce();
 
   $('#btn-export').addEventListener('click', _exportCSV);
   $('#f-status').addEventListener('change', ()=>{ SV_PAGE=1; renderSyncRibbon(); renderSyncTable(); _saveState(); });
   $('#sv-search').addEventListener('input', (e)=>{ SV_Q=e.target.value||''; SV_PAGE=1; renderSyncTable(); _saveState(); });
   $('#sv-size').addEventListener('change', (e)=>{ SV_SIZE=+e.target.value||20; SV_PAGE=1; renderSyncTable(); _saveState(); });
 
+  // Sync semua → hanya baris yang eligible _canPush
   $('#btn-sync-all').addEventListener('click', ()=>{
     const filter = $('#f-status').value || 'all';
     const rows = _getSyncRows(filter);
-    const ids  = rows.filter(r=> r.sync_status!=='synced').map(r=> r.local_id);
+    const ids  = rows.filter(_canPush).map(r=> r.local_id);
     doSync(ids);
   });
+  // Sync terpilih → saring dengan _canPush
   $('#btn-sync-selected').addEventListener('click', ()=>{
-    const ids = _collectSelectedLocalIds();
+    const idsSel = _collectSelectedLocalIds();
+    const ids = _rowsByIds(idsSel).filter(_canPush).map(r=>r.local_id);
     doSync(ids);
   });
 
-    // Online/offline → update ribbon
+  // Online/offline → update ribbon
   window.addEventListener('online', () => { renderSyncRibbon(); runOfflineWarmupOnce();});
   window.addEventListener('offline', renderSyncRibbon);
 }

@@ -275,83 +275,115 @@ function _mastersForPickers(){
   return { divisi, mandor };
 }
 
-// --- Mini komponen autosuggest generic ---
+// --- Mini komponen autosuggest generic (FIX klik desktop dengan pointerdown + delegasi) ---
 function setupAutoSuggest({ inputEl, hiddenEl, listEl, source, getKey, getLabel, onPick }){
-  let cursor = -1;             // index item aktif
-  let filtered = [];           // hasil filter terakhir
+  let cursor = -1;   // index item aktif
+  let filtered = []; // hasil filter terakhir
+
+  function highlight(i){
+    cursor = i;
+    // update kelas aktif
+    listEl.querySelectorAll('.as-item').forEach((el, idx)=>{
+      el.classList.toggle('active', idx === cursor);
+    });
+  }
 
   function renderList(items){
-    if (!items.length){ listEl.hidden = true; listEl.innerHTML=''; cursor=-1; return; }
-    listEl.innerHTML = items.map((it,i)=>(
-      `<div class="as-item${i===cursor?' active':''}" data-idx="${i}">
-         <div><b>${getLabel(it).main}</b></div>
-         <div class="sub">${getLabel(it).sub||''}</div>
-       </div>`
-    )).join('');
+    if (!items.length){
+      listEl.hidden = true; listEl.innerHTML = ''; cursor = -1; return;
+    }
+
+    listEl.innerHTML = items.map((it,i)=>{
+      const lab = getLabel(it);
+      return `
+        <div class="as-item${i===cursor?' active':''}" data-idx="${i}" role="option" tabindex="-1">
+          <div><b>${lab.main}</b></div>
+          <div class="sub">${lab.sub||''}</div>
+        </div>`;
+    }).join('');
+
     listEl.hidden = false;
-    // bind click
-    listEl.querySelectorAll('.as-item').forEach(div=>{
-      div.onclick = ()=> pick(items[Number(div.dataset.idx)||0]);
-    });
+
+    // === DELEGATED EVENTS (1x per render, refer ke 'items' terkini) ===
+    // 1) pointerdown lebih dahulu daripada blur → aman untuk klik mouse di desktop
+    listEl.onpointerdown = (e)=>{
+      const el = e.target.closest('.as-item');
+      if (!el) return;
+      e.preventDefault();                   // cegah blur pada input
+      const idx = +el.dataset.idx;
+      if (Number.isFinite(idx)) pick(items[idx]);
+    };
+
+    // 2) hover pakai mouse: ikutkan highlight agar konsisten dengan panah keyboard
+    listEl.onmousemove = (e)=>{
+      const el = e.target.closest('.as-item');
+      if (!el) return;
+      const idx = +el.dataset.idx;
+      if (Number.isFinite(idx) && idx !== cursor) highlight(idx);
+    };
   }
 
   function pick(item){
     const key = getKey(item);
     const lab = getLabel(item);
-    inputEl.value = lab.main;       // tampilkan label utama
-    hiddenEl.value = key;           // simpan key untuk logic lama
+    inputEl.value  = lab.main;     // tampilkan label utama di input text
+    hiddenEl.value = key;          // simpan key untuk proses berikutnya
     listEl.hidden = true; listEl.innerHTML = ''; cursor = -1;
+
+    // kembalikan fokus ke input (agar UX keyboard lanjut mulus)
+    inputEl.focus();
+
     if (typeof onPick === 'function') onPick(item, key);
+    // (opsional) trigger 'change' bila perlu didengar pihak lain
+    inputEl.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   inputEl.addEventListener('input', ()=>{
     const q = (inputEl.value||'').trim().toLowerCase();
     hiddenEl.value = ''; // reset sampai user memilih valid
     if (!q){ renderList([]); return; }
-    filtered = source.filter(it=>{
+
+    filtered = (source || []).filter(it=>{
       const lab = getLabel(it);
-      return (lab.main||'').toLowerCase().includes(q) || (lab.sub||'').toLowerCase().includes(q);
+      const main = (lab.main||'').toLowerCase();
+      const sub  = (lab.sub||'').toLowerCase();
+      return main.includes(q) || sub.includes(q);
     }).slice(0,50);
+
     cursor = -1;
     renderList(filtered);
   });
 
   inputEl.addEventListener('keydown', (e)=>{
     if (listEl.hidden) return;
-    if (e.key === 'ArrowDown'){ e.preventDefault(); cursor = Math.min(cursor+1, filtered.length-1); renderList(filtered); }
-    else if (e.key === 'ArrowUp'){ e.preventDefault(); cursor = Math.max(cursor-1, 0); renderList(filtered); }
-    else if (e.key === 'Enter'){ if (cursor>=0){ e.preventDefault(); pick(filtered[cursor]); } }
-    else if (e.key === 'Escape'){ listEl.hidden = true; }
+    if (e.key === 'ArrowDown'){ e.preventDefault(); highlight(Math.min(cursor+1, filtered.length-1)); }
+    else if (e.key === 'ArrowUp'){ e.preventDefault(); highlight(Math.max(cursor-1, 0)); }
+    else if (e.key === 'Enter'){
+      if (cursor>=0){ e.preventDefault(); pick(filtered[cursor]); }
+    }else if (e.key === 'Escape'){
+      listEl.hidden = true;
+    }
   });
 
-  // close on blur (plus fallback resolve jika unik)
+  // close on blur (beri jeda dikit agar pointerdown sempat jalan lebih dulu)
   inputEl.addEventListener('blur', ()=>{
     setTimeout(()=>{
       if (!hiddenEl.value){
         // fallback: jika hanya 1 match, pilih otomatis
-        if (filtered.length===1) pick(filtered[0]);
+        if (filtered.length === 1) pick(filtered[0]);
       }
       listEl.hidden = true;
     }, 120);
   });
 
-  // klik di luar dropdown menutup list
+  // klik di luar dropdown menutup list (tetap aman karena pointerdown di item sudah preventDefault)
   document.addEventListener('click', (e)=>{
     if (!listEl.contains(e.target) && e.target !== inputEl){
       listEl.hidden = true;
     }
   });
-  if (!hiddenEl.value){
-  const exact = filtered.find(it=>{
-    const lab = getLabel(it);
-    const main = (lab.main||'').toLowerCase();
-    const sub  = (lab.sub||'').toLowerCase();
-    const raw  = (inputEl.value||'').trim().toLowerCase();
-    return main === raw || sub === raw || String(getKey(it)).toLowerCase() === raw;
-  });
-  if (exact) pick(exact);
 }
-}
+
 
 function initAutoSuggestPickers(){
   const { mandor, divisi } = _mastersForPickers();
