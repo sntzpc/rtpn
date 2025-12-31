@@ -3,13 +3,63 @@
 // =====================
 import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $, fmtDateISO, ensureNumber } from '../core/utils.js';
-import { Keys, LStore } from '../core/storage.js';
+import { Keys, IStore } from '../core/storage.js';
 
 // === Paraf Digital harian (monitor footer) ===
 const PARAF_DAY_KEY = (Keys.PARAF_DAY_LOG || 'pp2:paraf.daylog');
 
-function pfAll(){ return LStore.getArr(PARAF_DAY_KEY) || []; }
-function pfSave(arr){ LStore.setArr(PARAF_DAY_KEY, arr); }
+// ===== IndexedDB cache (sync-friendly) =====
+const DB = {
+  input: [],
+  masterBlok: [],
+  masterKadvel: [],
+  masterDivisi: [],
+  masterMandor: [],
+  masterEstate: [],
+  masterCompany: [],
+  masterLibur: [],
+  parafDay: [],
+};
+
+async function loadReportCaches(){
+  const [
+    input,
+    blok,
+    kadvel,
+    divisi,
+    mandor,
+    estate,
+    company,
+    libur,
+    parafDay,
+  ] = await Promise.all([
+    IStore.getArr(Keys.INPUT_RECORDS).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_BLOK).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_KADVEL).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_DIVISI).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_MANDOR).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_ESTATE).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_COMPANY).catch(()=>[]),
+    IStore.getArr(Keys.MASTER_LIBUR).catch(()=>[]),
+    IStore.getArr(PARAF_DAY_KEY).catch(()=>[]),
+  ]);
+
+  DB.input        = Array.isArray(input) ? input : [];
+  DB.masterBlok   = Array.isArray(blok) ? blok : [];
+  DB.masterKadvel = Array.isArray(kadvel) ? kadvel : [];
+  DB.masterDivisi = Array.isArray(divisi) ? divisi : [];
+  DB.masterMandor = Array.isArray(mandor) ? mandor : [];
+  DB.masterEstate = Array.isArray(estate) ? estate : [];
+  DB.masterCompany= Array.isArray(company) ? company : [];
+  DB.masterLibur  = Array.isArray(libur) ? libur : [];
+  DB.parafDay     = Array.isArray(parafDay) ? parafDay : [];
+}
+
+function pfAll(){ return Array.isArray(DB.parafDay) ? DB.parafDay : []; }
+async function pfSave(arr){
+  DB.parafDay = Array.isArray(arr) ? arr : [];
+  await IStore.setArr(PARAF_DAY_KEY, DB.parafDay);
+}
 function pfSig(){
   return {
     assistant_nik:  localStorage.getItem(Keys.NIK)  || localStorage.getItem('pp2:session.nik')  || '',
@@ -23,7 +73,7 @@ function pfIsMarked({scope, key, dateISO}){
 }
 
 // Toggle/set status paraf untuk 1 tanggal
-function pfToggle({scope, key, dateISO, on}){
+async function pfToggle({scope, key, dateISO, on}){
   const all = pfAll();
   const i = all.findIndex(x => x.scope===scope && String(x.key)===String(key) && x.date===dateISO);
   if (on){
@@ -31,7 +81,7 @@ function pfToggle({scope, key, dateISO, on}){
   }else{
     if (i>=0) all.splice(i,1);
   }
-  pfSave(all);
+  await pfSave(all);
 }
 
 // Kumpulan tanggal (Set<ISO>) yang sudah diparaf untuk 1 bulan (scope+key)
@@ -47,7 +97,7 @@ function pfMarkedSetMonth({scope, key, y, m}){
 
 // --- Helper nama blok (id -> nama/kode) ---
 function _blokNameById(id){
-  const list = LStore.getArr(Keys.MASTER_BLOK) || [];
+  const list = DB.masterBlok || [];
   const b = list.find(x => String(x.id) === String(id));
   return b ? (b.nama || b.kode || b.id) : (id || '');
 }
@@ -70,7 +120,7 @@ function _firstNum(obj, keys){
 
 // --- BJR dari master blok (mencoba beberapa kemungkinan nama kolom) ---
 function _bjrFromMaster(blok_id){
-  const blk = (LStore.getArr(Keys.MASTER_BLOK) || [])
+  const blk = (DB.masterBlok || [])
     .find(x => String(x.id) === String(blok_id));
   if (!blk) return 0;
   return _firstNum(blk, ['bjr','bjr_kg','bjrKg','rata_bjr','rataBjr','avg_bjr','bjr_kg_per_jjg']);
@@ -243,7 +293,7 @@ html, body, #app{ max-width:100%; overflow-x:hidden; }
 
 function yearOptions(){
   const years = new Set();
-  (LStore.getArr(Keys.INPUT_RECORDS)||[]).forEach(r=>{
+  (DB.input||[]).forEach(r=>{
     const y = (r.tanggal||'').slice(0,4);
     if (y) years.add(y);
   });
@@ -256,8 +306,8 @@ function yearOptions(){
 // --- Build masters sesuai role (batasi divisi utk Asisten) ---
 function _mastersForPickers(){
   const role = (localStorage.getItem(Keys.ROLE)||localStorage.getItem('pp2:session.role')||'-').toLowerCase();
-  const divisiAll = (LStore.getArr(Keys.MASTER_DIVISI)||[]);
-  const mandorAll = (LStore.getArr(Keys.MASTER_MANDOR)||[]);
+  const divisiAll = (DB.masterDivisi||[]);
+  const mandorAll = (DB.masterMandor||[]);
   let divisi = divisiAll;
   let mandor = mandorAll;
 
@@ -444,7 +494,7 @@ function fillSelectors(){
 
 
 function holidaysSet(y, m){
-  const list = (LStore.getArr(Keys.MASTER_LIBUR)||[]);
+  const list = (DB.masterLibur||[]);
   const set = new Set();
   const ym = `${y}-${pad2(m)}-`;
   list.forEach(x=>{
@@ -470,7 +520,7 @@ function sundaysSet(y, m){
 
 // ===== RINGKAS (lama) =====
 function filterData(m, y, mode, key){
-  const recs = (LStore.getArr(Keys.INPUT_RECORDS)||[]).filter(r=>{
+  const recs = (DB.input||[]).filter(r=>{
     if (!r.tanggal) return false;
     const ym = r.tanggal.slice(0,7);
     if (ym !== `${y}-${pad2(m)}`) return false;
@@ -738,7 +788,7 @@ function _compareByBlokId(a, b){
 
 // ==== Kadvel ordering: D1..D6 ====
 function _kadvelCodeById(kid){
-  const kadvelList = LStore.getArr(Keys.MASTER_KADVEL) || [];
+  const kadvelList = DB.masterKadvel || [];
   const k = kadvelList.find(x => String(x.id) === String(kid));
   // ambil yang paling representatif sebagai "kode"
   return (k?.kode || k?.nama || k?.id || '').toString().toUpperCase().trim();
@@ -799,7 +849,7 @@ function monitorHTML(m, y, mode, key){
   }, 0);
 
   // --- SET panen lintas-bulan dari semua input lokal (untuk carry-over) ---
-  const allInputs = LStore.getArr(Keys.INPUT_RECORDS)||[];
+  const allInputs = DB.input||[];
   const panenSetMap = new Map(); // blok_id -> Set('YYYY-MM-DD')
   for (const r of allInputs){
     const luas = ensureNumber(r.luas_panen_ha,0);
@@ -812,8 +862,8 @@ function monitorHTML(m, y, mode, key){
   }
 
   // helpers
-  const kadvelList = LStore.getArr(Keys.MASTER_KADVEL)||[];
-  const blokList   = LStore.getArr(Keys.MASTER_BLOK)||[];
+  const kadvelList = DB.masterKadvel||[];
+  const blokList   = DB.masterBlok||[];
   const kadvelName = (id)=>{ const k = kadvelList.find(x=>String(x.id)===String(id)); return k ? (k.nama||k.id) : (id||'-'); };
   const firstISO = `${y}-${pad2(m)}-01`;
   const parseISO = (s)=> dObj(+s.slice(0,4), +s.slice(5,7), +s.slice(8,10));
@@ -1051,10 +1101,10 @@ function renderMonitor(){
   const btns = container.querySelectorAll('.paraf-row .pf-btn[data-iso]');
   if (roleUser === 'asisten'){
     btns.forEach(btn=>{
-      btn.addEventListener('click', ()=>{
+      btn.addEventListener('click', async ()=>{
         const iso = btn.getAttribute('data-iso');
         const nextOn = btn.getAttribute('aria-pressed')!=='true';
-        pfToggle({ scope, key, dateISO: iso, on: nextOn });
+        await pfToggle({ scope, key, dateISO: iso, on: nextOn });
         btn.setAttribute('aria-pressed', nextOn?'true':'false');
         btn.textContent = nextOn ? '✓' : '○';
         btn.closest('td')?.classList.toggle('pf-on', nextOn);
@@ -1077,12 +1127,14 @@ function renderMonitor(){
 
 // ===== Bind & Render =====
  async function bind(){
+  await loadReportCaches();
   fillSelectors();
   const maybePromise = runOfflineWarmupOnce();
   // Aman untuk sync/async:
   if (maybePromise && typeof maybePromise.then === 'function'){
     try{ await maybePromise; }catch(_){}
   }
+  await loadReportCaches();
   initAutoSuggestPickers();
   const role = localStorage.getItem('pp2:session.role') || localStorage.getItem(Keys.ROLE) || '-';
   if (role==='asisten'){ $('#wrap-paraf').style.display='block'; }
@@ -1110,14 +1162,36 @@ function renderMonitor(){
     else renderRingkas();
   });
 
-  // Paraf (asisten)
-  $('#btn-paraf').addEventListener('click', ()=>{
-    const v = $('#f-mode').value; const key = v==='mandor'? $('#f-mandor').value : $('#f-divisi').value;
-    if (!key) return showToast('Pilih mandor/divisi dulu');
-    const logs = LStore.getArr(Keys.PARAF_LOG||'pp2:paraf.log') || [];
-    logs.push({ scope: v==='mandor'?'mandoran':'divisi', key, date: fmtDateISO(), assistant_nik: localStorage.getItem(Keys.NIK)||'', assistant_name: localStorage.getItem(Keys.NAME)||'', ts: new Date().toISOString() });
-    LStore.setArr(Keys.PARAF_LOG||'pp2:paraf.log', logs);
-    showToast('Paraf tersimpan');
+ // Paraf (asisten) - simpan ke IndexedDB (IStore)
+  $('#btn-paraf').addEventListener('click', async () => {
+    try {
+      const v = $('#f-mode').value;
+      const key = (v === 'mandor') ? $('#f-mandor').value : $('#f-divisi').value;
+
+      if (!key) return showToast('Pilih mandor/divisi dulu');
+
+      const LOG_KEY = (Keys.PARAF_LOG || 'pp2:paraf.log');
+
+      // Ambil log lama dari IndexedDB (fallback [] jika belum ada / error)
+      const logs = (await IStore.getArr(LOG_KEY).catch(() => [])) || [];
+
+      logs.push({
+        scope: (v === 'mandor') ? 'mandoran' : 'divisi',
+        key,
+        date: fmtDateISO(),
+        assistant_nik: localStorage.getItem(Keys.NIK) || '',
+        assistant_name: localStorage.getItem(Keys.NAME) || '',
+        ts: new Date().toISOString()
+      });
+
+      // Simpan balik ke IndexedDB
+      await IStore.setArr(LOG_KEY, logs);
+
+      showToast('Paraf tersimpan');
+    } catch (err) {
+      console.error('Paraf save error:', err);
+      showToast('Gagal menyimpan paraf');
+    }
   });
 }
 
@@ -1209,12 +1283,12 @@ function _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokLi
 
 // -- helper render info header (ambil dari master + filter yang dipakai) --
 function _buildHeaderInfo({m,y,mode,key}){
-  const companies = LStore.getArr(Keys.MASTER_COMPANY) || [];
-  const estates   = LStore.getArr(Keys.MASTER_ESTATE)  || [];
-  const divisi    = LStore.getArr(Keys.MASTER_DIVISI)  || [];
-  const kadvel    = LStore.getArr(Keys.MASTER_KADVEL)  || [];
-  const mandor    = LStore.getArr(Keys.MASTER_MANDOR)  || [];
-  const blokList  = LStore.getArr(Keys.MASTER_BLOK)    || [];
+  const companies = DB.masterCompany || [];
+  const estates   = DB.masterEstate  || [];
+  const divisi    = DB.masterDivisi  || [];
+  const kadvel    = DB.masterKadvel  || [];
+  const mandor    = DB.masterMandor  || [];
+  const blokList  = DB.masterBlok    || [];
 
   // Coba tebak estate dulu (fungsi ini sudah ditingkatkan untuk mode mandor)
   let estateObj = _deduceEstateFromSelection({ mode, key, estates, divisi, mandor, blokList });

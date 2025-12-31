@@ -2,7 +2,7 @@
 // File: features/settings.js (guard + JSONP fallback + Backup/Restore XLSX)
 // =====================
 import { $, ensureNumber, hash } from '../core/utils.js';
-import { Keys, LStore } from '../core/storage.js';
+import { Keys, LStore, IStore } from '../core/storage.js';
 import { API } from '../core/api.js';
 import { Theme, getTheme, setTheme, applyTheme } from '../core/theme.js';
 import { Progress } from '../core/progress.js';
@@ -54,6 +54,7 @@ function view(){
           <option value="mandor">Mandor</option>
           <option value="asisten">Asisten</option>
           <option value="admin">Admin</option>
+          <option value="advisor">Advisor</option>
         </select>
       </div>
       <div class="col">
@@ -69,6 +70,17 @@ function view(){
       <div class="col"><button class="primary" id="btn-login">Login (Set Role)</button></div>
       <div class="col"><button id="btn-master-pull">Tarik Master</button></div>
       <div class="col"><button id="btn-download-data">Download Data Aktual → Lokal</button></div>
+      <div class="row">
+        <div class="col">
+          <label>Filter Tahun (Aktual)</label>
+          <input id="flt-year" type="number" placeholder="2025" />
+        </div>
+        <div class="col">
+          <label>Filter Estate (Aktual)</label>
+          <select id="flt-estate" multiple size="5"></select>
+          <div class="hint">Kosong / tidak dipilih = Semua Estate</div>
+        </div>
+      </div>
       <div class="col"><button class="danger" id="btn-reset-local">Reset Semua Data Lokal</button></div>
     </div>
   </div>
@@ -165,16 +177,18 @@ async function parseMasterXLSX(file){
   }
   return result;
 }
-function applyMasterJSON(j){
-  if (j.company) LStore.setArr(Keys.MASTER_COMPANY, j.company);
-  if (j.estate)  LStore.setArr(Keys.MASTER_ESTATE, j.estate);
-  if (j.divisi)  LStore.setArr(Keys.MASTER_DIVISI, j.divisi);
-  if (j.kadvel)  LStore.setArr(Keys.MASTER_KADVEL, j.kadvel);
-  if (j.blok)    LStore.setArr(Keys.MASTER_BLOK, j.blok);
-  if (j.mandor)  LStore.setArr(Keys.MASTER_MANDOR, j.mandor);
-  if (j.asisten) LStore.setArr(Keys.MASTER_ASISTEN, j.asisten);
-  if (j.libur)   LStore.setArr(Keys.MASTER_LIBUR, j.libur);
+
+async function applyMasterJSON(j){
+  if (j.company) await IStore.setArr(Keys.MASTER_COMPANY, j.company);
+  if (j.estate)  await IStore.setArr(Keys.MASTER_ESTATE,  j.estate);
+  if (j.divisi)  await IStore.setArr(Keys.MASTER_DIVISI,  j.divisi);
+  if (j.kadvel)  await IStore.setArr(Keys.MASTER_KADVEL,  j.kadvel);
+  if (j.blok)    await IStore.setArr(Keys.MASTER_BLOK,    j.blok);
+  if (j.mandor)  await IStore.setArr(Keys.MASTER_MANDOR,  j.mandor);
+  if (j.asisten) await IStore.setArr(Keys.MASTER_ASISTEN, j.asisten);
+  if (j.libur)   await IStore.setArr(Keys.MASTER_LIBUR,   j.libur);
 }
+
 function downloadMasterTemplateXLSX(){
   if (typeof XLSX === 'undefined'){ alert('Library XLSX belum termuat'); return; }
   const samples = {
@@ -221,21 +235,23 @@ function _appendSheet(wb, sheetName, headers, rows){
   XLSX.utils.book_append_sheet(wb, ws, sheetName);
 }
 
-function exportLocalAsXLSX(){
+async function exportLocalAsXLSX(){
   if (typeof XLSX === 'undefined'){ showToast('Library XLSX belum termuat'); return; }
-  const pickArr = (k)=> LStore.getArr(k) || [];
+  const pickArr = async (k)=> (await IStore.getArr(k).catch(()=>[])) || [];
+
   const master  = {
-    company: pickArr(Keys.MASTER_COMPANY),
-    estate : pickArr(Keys.MASTER_ESTATE),
-    divisi : pickArr(Keys.MASTER_DIVISI),
-    kadvel : pickArr(Keys.MASTER_KADVEL),
-    blok   : pickArr(Keys.MASTER_BLOK),
-    mandor : pickArr(Keys.MASTER_MANDOR),
-    asisten: pickArr(Keys.MASTER_ASISTEN),
-    libur  : pickArr(Keys.MASTER_LIBUR),
+    company: await pickArr(Keys.MASTER_COMPANY),
+    estate : await pickArr(Keys.MASTER_ESTATE),
+    divisi : await pickArr(Keys.MASTER_DIVISI),
+    kadvel : await pickArr(Keys.MASTER_KADVEL),
+    blok   : await pickArr(Keys.MASTER_BLOK),
+    mandor : await pickArr(Keys.MASTER_MANDOR),
+    asisten: await pickArr(Keys.MASTER_ASISTEN),
+    libur  : await pickArr(Keys.MASTER_LIBUR),
   };
-  const inputRecords = pickArr(Keys.INPUT_RECORDS);
-  const syncQueue    = pickArr(Keys.SYNC_QUEUE);
+
+  const inputRecords = await pickArr(Keys.INPUT_RECORDS);
+  const syncQueue    = await pickArr(Keys.SYNC_QUEUE);
   let userDivisi     = [];
   try{
     const raw = localStorage.getItem(Keys.USER_DIVISI) || '[]';
@@ -274,7 +290,9 @@ function exportLocalAsXLSX(){
 }
 
 async function restoreFromBackupXLSX(file){
+  if (typeof XLSX === 'undefined') throw new Error('Library XLSX belum termuat');
   if (!file) throw new Error('Pilih file .xlsx');
+
   const role = (localStorage.getItem(Keys.ROLE)||'-').toLowerCase();
   if (!(role==='admin' || role==='asisten')) throw new Error('Restore hanya untuk Admin & Asisten');
 
@@ -287,10 +305,11 @@ async function restoreFromBackupXLSX(file){
     return _sheetToObjsWithHeader(ws, headers);
   };
 
+  // --- MASTER ---
   const m = {};
-  Object.entries(MASTER_HEADERS).forEach(([sheet, headers])=>{
+  for (const [sheet, headers] of Object.entries(MASTER_HEADERS)){
     m[sheet] = readSheet(sheet, headers);
-  });
+  }
   if (m.blok && m.blok.length){
     m.blok.forEach(b=>{
       b.luas_ha = Number(b.luas_ha||0);
@@ -298,6 +317,7 @@ async function restoreFromBackupXLSX(file){
     });
   }
 
+  // --- INPUT RECORDS ---
   const restoredInputs = readSheet('input_records', INPUT_HEADERS).map(r=>({
     local_id: r.local_id || '',
     server_id: r.server_id || '',
@@ -317,27 +337,75 @@ async function restoreFromBackupXLSX(file){
     created_at: r.created_at || '',
     updated_at: r.updated_at || '',
   }));
-  const restoredQueue = readSheet('sync_queue', QUEUE_HEADERS).map(r=> String(r.local_id||'') ).filter(Boolean);
+
+  const restoredQueue = readSheet('sync_queue', QUEUE_HEADERS)
+    .map(r=> String(r.local_id||''))
+    .filter(Boolean);
 
   const userDivisiRows = readSheet('user_divisi', USER_DIVISI_HEADERS);
   const userDivisi = userDivisiRows.map(x=> String(x.divisi_id||'')).filter(Boolean);
 
-  Object.entries(m).forEach(([k, arr])=>{
-    if (Array.isArray(arr) && arr.length){
-      const map = {
-        company: Keys.MASTER_COMPANY, estate: Keys.MASTER_ESTATE, divisi: Keys.MASTER_DIVISI,
-        kadvel: Keys.MASTER_KADVEL, blok: Keys.MASTER_BLOK, mandor: Keys.MASTER_MANDOR,
-        asisten: Keys.MASTER_ASISTEN, libur: Keys.MASTER_LIBUR
-      };
-      if (map[k]) LStore.setArr(map[k], arr);
+  // --- SIMPAN MASTER ke IndexedDB ---
+  const mapKey = {
+    company: Keys.MASTER_COMPANY,
+    estate : Keys.MASTER_ESTATE,
+    divisi : Keys.MASTER_DIVISI,
+    kadvel : Keys.MASTER_KADVEL,
+    blok   : Keys.MASTER_BLOK,
+    mandor : Keys.MASTER_MANDOR,
+    asisten: Keys.MASTER_ASISTEN,
+    libur  : Keys.MASTER_LIBUR
+  };
+
+  for (const [k, arr] of Object.entries(m)){
+    if (Array.isArray(arr) && arr.length && mapKey[k]){
+      await IStore.setArr(mapKey[k], arr);
     }
-  });
-  if (restoredInputs.length) LStore.setArr(Keys.INPUT_RECORDS, restoredInputs);
-  if (restoredQueue.length)  LStore.setArr(Keys.SYNC_QUEUE,    restoredQueue);
+  }
+
+  // --- SIMPAN DATA AKTUAL & QUEUE ---
+  if (restoredInputs.length) await IStore.setArr(Keys.INPUT_RECORDS, restoredInputs);
+  await IStore.setArr(Keys.SYNC_QUEUE, restoredQueue); // simpan walau kosong
+
   if (userDivisi.length) localStorage.setItem(Keys.USER_DIVISI, JSON.stringify(userDivisi));
 
   showToast('Restore selesai. Memuat ulang…');
   setTimeout(()=> location.reload(), 250);
+}
+
+async function fillEstateOptions(){
+  const sel = $('#flt-estate');
+  if (!sel) return;
+
+  const estates = (await IStore.getArr(Keys.MASTER_ESTATE).catch(()=>[])) || [];
+  // sort biar rapi
+  estates.sort((a,b)=> String(a.nama||a.id).localeCompare(String(b.nama||b.id)));
+
+  if (!estates.length){
+    sel.innerHTML = '';
+    sel.disabled = true;
+    sel.insertAdjacentHTML('beforeend', `<option value="">(Belum ada data estate — tarik master dulu)</option>`);
+    return;
+  }
+
+  sel.disabled = false;
+  sel.innerHTML = estates.map(e =>
+    `<option value="${String(e.id)}">${String(e.nama||e.id)}</option>`
+  ).join('');
+}
+
+// Optional: set default tahun agar kelihatan terisi dan enak dipakai
+function ensureDefaultYear(){
+  const inp = $('#flt-year');
+  if (!inp) return;
+  if (!String(inp.value||'').trim()){
+    inp.value = String(new Date().getFullYear());
+  }
+}
+
+async function refreshFilterUI(){
+  ensureDefaultYear();
+  await fillEstateOptions();
 }
 
 // ---------- Bind utama ----------
@@ -359,6 +427,7 @@ function bind(){
 
   ensureAsistenSections();
   ensureBackupRestoreAccess();
+  refreshFilterUI().catch(console.warn);
 
   // LOGIN
   $('#btn-login').addEventListener('click', async ()=>{
@@ -380,9 +449,9 @@ function bind(){
       localStorage.setItem(Keys.TOKEN, pass_hash);
 
       if (role==='asisten'){
-        const arr = LStore.getArr(Keys.MASTER_ASISTEN) || [];
+        const arr = (await IStore.getArr(Keys.MASTER_ASISTEN).catch(()=>[])) || [];
         const me  = arr.find(a => String(a.nik)===String(nik));
-        const divList = me && me.divisi_id ? [String(me.divisi_id)] : [];
+        const divList = (me && me.divisi_id) ? [String(me.divisi_id)] : [];
         localStorage.setItem(Keys.USER_DIVISI, JSON.stringify(divList));
       }
 
@@ -437,12 +506,15 @@ function bind(){
       };
       const keys = Object.keys(MAP);
       Progress.switchToDeterminate(keys.length);
-      keys.forEach((k,i)=>{
+
+      for (let i=0; i<keys.length; i++){
+        const k = keys[i];
         Progress.update(`Menyimpan ${k}…`);
-        LStore.setArr(MAP[k], Array.isArray(data[k]) ? data[k] : []);
+        await IStore.setArr(MAP[k], Array.isArray(data[k]) ? data[k] : []);
         Progress.tick(i+1, keys.length);
-      });
+      }
       Progress.update('Selesai');
+      await refreshFilterUI();
       showToast('Master tersimpan ke lokal');
     }catch(e){
       showToast(e.message || 'Gagal tarik master');
@@ -458,16 +530,23 @@ function bind(){
     if (role==='-') return showToast('Set role dulu');
     try{
       Progress.open({ title:'Download Data Aktual', subtitle:'Meminta ke server…' });
-      const month = ''; const year = '';
+      const month = ''; // <-- FIX: agar JSONP tidak error (month undefined)
+      const year = ($('#flt-year')?.value || '').trim(); // boleh kosong = semua tahun
+
+      const estateSel = $('#flt-estate');
+      const estate_ids = estateSel
+        ? Array.from(estateSel.selectedOptions).map(o=>o.value).filter(Boolean).join(',')
+        : '';
+
       let rows = [];
       try{
-        const res = await API.actualPull({ role, nik, month, year }); // divisi auto-terkirim via sessionAttach()
+        const res = await API.actualPull({ month, year, estate_ids }); // month sekarang variabel
         if (!res.ok) throw new Error(res.error || 'fetch gagal');
         rows = Array.isArray(res.data?.rows) ? res.data.rows : [];
       }catch(errFetch){
         if (!hasJSONPFallback()) throw errFetch;
         const r = await gasJSONP('actual.pull', {
-          role, nik, month, year,
+          role, nik, month, year, estate_ids, // <-- sertakan estate_ids juga kalau endpoint mendukung
           nik_auth: localStorage.getItem(Keys.NIK)||'',
           token:    localStorage.getItem(Keys.TOKEN)||'',
         });
@@ -509,11 +588,11 @@ function bind(){
       Progress.tick(normalized.length, normalized.length);
 
       const merged = [...map.values()].sort((a,b)=> a.tanggal>b.tanggal ? -1 : 1);
-      LStore.setArr(Keys.INPUT_RECORDS, merged);
+      await IStore.setArr(Keys.INPUT_RECORDS, merged);
 
-      const q = new Set(LStore.getArr(Keys.SYNC_QUEUE)||[]);
-      normalized.forEach(x=> q.delete(x.local_id));
-      LStore.setArr(Keys.SYNC_QUEUE, [...q]);
+      const qOld = new Set(await IStore.getArr(Keys.SYNC_QUEUE));
+      normalized.forEach(x=> qOld.delete(x.local_id));
+      await IStore.setArr(Keys.SYNC_QUEUE, [...qOld]);
 
       Progress.update('Selesai');
       showToast(`Data aktual terunduh: ${normalized.length} baris`);
@@ -526,13 +605,14 @@ function bind(){
 
   // RESET LOKAL
   $('#btn-reset-local').addEventListener('click', async ()=>{
-    const ok = await confirmDialog('Yakin hapus SEMUA data lokal? Tindakan ini memerlukan password aktif.');
-    if (!ok) return;
-    const pass  = prompt('Masukkan password aktif untuk konfirmasi:');
-    const token = localStorage.getItem(Keys.TOKEN) || '';
-    if (!pass || hashPlain(pass) !== token){ showToast('Password salah'); return; }
-    LStore.clearAll(); showToast('Data lokal dihapus'); location.reload();
-  });
+  if (!confirm('Hapus SEMUA data lokal (IndexedDB) aplikasi Pusingan Panen?')) return;
+  try{
+    await IStore.clearDatabase();
+    showToast('✅ IndexedDB aplikasi sudah dibersihkan');
+  }catch(e){
+    showToast('Gagal reset: ' + (e.message||e));
+  }
+});
 
   // TEMPLATE MASTER
   $('#btn-download-template').addEventListener('click', ()=>{
@@ -557,8 +637,16 @@ function bind(){
       }
 
       const parts = Object.keys(parsed);
-      Progress.switchToDeterminate(parts.length+1);
-      parts.forEach((k,i)=>{ Progress.update(`Menyimpan ${k}…`); applyMasterJSON({[k]:parsed[k]}); Progress.tick(i+1, parts.length+1); });
+      Progress.switchToDeterminate(parts.length + 1);
+
+      let step = 0;
+      for (const k of parts){
+        Progress.update(`Menyimpan ${k}…`);
+        await applyMasterJSON({ [k]: parsed[k] }); // <-- FIX: tunggu benar-benar tersimpan
+        step++;
+        Progress.tick(step, parts.length + 1);
+      }
+      await refreshFilterUI();
 
       Progress.update('Mengunggah (bulk)…');
       let pushed = false;
@@ -597,12 +685,12 @@ function bind(){
   });
 
   // === Backup/Restore ===
-  document.getElementById('btn-export-xlsx').addEventListener('click', ()=>{
+  document.getElementById('btn-export-xlsx')?.addEventListener('click', async ()=>{
     try{
       Progress.open({ title:'Backup', subtitle:'Menyiapkan file .xlsx…' });
-      exportLocalAsXLSX();
-    }catch(e){
-      showToast(e.message || 'Gagal membuat backup');
+      await exportLocalAsXLSX();
+    }catch(e){ console.warn(e); 
+      showToast(e.message || 'Gagal backup');
     }finally{
       Progress.close();
     }

@@ -73,8 +73,11 @@ export const API = {
   },
 
   // USER MGMT (server wajib guard admin)
-  async userAdd({ nik, name, role, pass_hash }) {
-    return _fetchJSON(sessionAttach({ route:'user.add', nik, name, role, pass_hash }));
+  async userAdd({ nik, name, role, pass_hash, advisor_estate_ids }) {
+    return _fetchJSON(sessionAttach({
+      route:'user.add', nik, name, role, pass_hash,
+      advisor_estate_ids: advisor_estate_ids || ''
+    }));
   },
   async userReset({ nik, pass_hash }) {
     return _fetchJSON(sessionAttach({ route:'user.reset', nik, pass_hash }));
@@ -95,8 +98,8 @@ export const API = {
   },
 
   // DATA AKTUAL
-  async actualPull({ month, year } = {}) {
-    return _fetchJSON(sessionAttach({ route:'actual.pull', month, year }));
+  async actualPull({ month, year, estate_ids } = {}) {
+    return _fetchJSON(sessionAttach({ route:'actual.pull', month, year, estate_ids }));
   },
 
   // PUSINGAN

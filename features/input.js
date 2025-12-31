@@ -1,25 +1,11 @@
 // =====================
 // File: features/input.js
 // =====================
-import {
-  $,
-  fmtDateISO,
-  nowISO,
-  hash,
-  ensureNumber
-} from '../core/utils.js';
-import {
-  Keys,
-  LStore
-} from '../core/storage.js';
-import {
-  upsertRecord,
-  SyncState,
-  getRecord
-} from '../core/sync.js';
-import {
-  Progress
-} from '../core/progress.js';
+import { $,  fmtDateISO,  nowISO,  hash,  ensureNumber} from '../core/utils.js';
+import {  Keys,  LStore, IStore } from '../core/storage.js';   // ✅ tambah IStore
+import {  upsertRecord,  SyncState,  getRecord} from '../core/sync.js';
+import {  Progress} from '../core/progress.js';
+import { API } from '../core/api.js';                          // ✅ tambah API (dipakai bulk upload)
 
 /* ===== JSONP FALLBACK (mini, sama pola dgn settings.js) ===== */
 function _gasBase() {
@@ -74,19 +60,21 @@ function gasJSONP(route, params = {}) {
 }
 
 let SELECTED_BLOCK = null; // cache blok terpilih (obj master)
+// ✅ cache blok yang “visible” utk role aktif (ARRAY, bukan Promise)
+let VISIBLE_BLOCKS = [];
+let MASTER_KADVEL = []; // ✅ cache kadvel untuk kadvelNameById
 
 function getBJR(blok_id) {
-  const bl = LStore.getArr(Keys.MASTER_BLOK) || [];
+  const bl = getVisibleBlocksSync(); // ✅ ambil dari cache visible blocks
   const b = bl.find(x => String(x.id) === String(blok_id));
   return b ? ensureNumber(b.bjr_kg_per_jjg, 0) : 0;
 }
 
 function kadvelNameById(id) {
-  const list = LStore.getArr(Keys.MASTER_KADVEL) || [];
+  const list = getKadvelSync();
   const k = list.find(x => String(x.id) === String(id));
   return k ? (k.nama || k.kode || k.id) : (id || '');
 }
-
 
 function compute(rec) {
   const bjr = getBJR(rec.blok_id);                     // kg/jjg
@@ -218,29 +206,62 @@ function getUserDivisiSet(){
   }catch(_){ return new Set(); }
 }
 
-
-// ==== Auto-suggest blok ====
-function getVisibleBlocks() {
+// ==== Visible blocks cache (async loader, sync getter) ====
+async function loadVisibleBlocks() {
   const role = (localStorage.getItem(Keys.ROLE) || '-').toLowerCase();
   const nik  = localStorage.getItem(Keys.NIK) || '';
-  let blok   = LStore.getArr(Keys.MASTER_BLOK) || [];
+
+  // pakai IndexedDB store bila tersedia, fallback ke localStorage
+  let blok = [];
+  try {
+    blok = await IStore.getArr(Keys.MASTER_BLOK);
+  } catch (_) {
+    blok = LStore.getArr(Keys.MASTER_BLOK) || [];
+  }
+  blok = Array.isArray(blok) ? blok : [];
 
   if (role === 'mandor' && nik) {
     blok = blok.filter(b => String(b.mandor_nik) === String(nik));
   } else if (role === 'asisten') {
-    // Batasi ke divisi milik Asisten
-    const divSet = getUserDivisiSet(); // isi dari Keys.USER_DIVISI
+    const divSet = getUserDivisiSet();
     if (divSet.size) blok = blok.filter(b => divSet.has(String(b.divisi_id)));
   }
   // admin: tidak dibatasi
-  return blok;
+
+  VISIBLE_BLOCKS = blok;
+  return VISIBLE_BLOCKS;
+}
+
+async function loadKadvelMaster(){
+  try {
+    MASTER_KADVEL = await IStore.getArr(Keys.MASTER_KADVEL);
+  } catch (_) {
+    MASTER_KADVEL = LStore.getArr(Keys.MASTER_KADVEL) || [];
+  }
+  if (!Array.isArray(MASTER_KADVEL)) MASTER_KADVEL = [];
+  return MASTER_KADVEL;
+}
+function getKadvelSync(){
+  return Array.isArray(MASTER_KADVEL) ? MASTER_KADVEL : [];
+}
+
+function getVisibleBlocksSync() {
+  return Array.isArray(VISIBLE_BLOCKS) ? VISIBLE_BLOCKS : [];
 }
 
 
+
 // ==== Auto-suggest blok (label: "Nama Blok | xx,xx Ha") ====
-function fillBlockDatalist() {
+async function fillBlockDatalist() {
   const list = $('#list-blok');
-  const blocks = getVisibleBlocks();
+  if (!list) return;
+
+  // pastikan cache terisi
+  if (!VISIBLE_BLOCKS || !VISIBLE_BLOCKS.length) {
+    await loadVisibleBlocks();
+  }
+  const blocks = getVisibleBlocksSync();
+
   const nf = new Intl.NumberFormat('id-ID', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -253,8 +274,8 @@ function fillBlockDatalist() {
     return `<option value="${label}"></option>`;
   }).join('');
 
-  // hint
-  $('#blok-hint').textContent = 'Pilih dari saran.';
+  const hint = $('#blok-hint');
+  if (hint) hint.textContent = blocks.length ? 'Pilih dari saran.' : 'Master blok belum tersedia / tidak ada blok sesuai role.';
 }
 
 
@@ -263,13 +284,11 @@ function resolveBlock(text) {
   const raw = (text || '').trim();
   if (!raw) return null;
 
-  const blocks = getVisibleBlocks();
+  const blocks = getVisibleBlocksSync(); // ✅ FIX: dulu getVisibleBlocks() (Promise)
 
-  // Ekstrak bagian nama sebelum '|'
   const namePart = raw.split('|')[0].trim();
   const q = namePart.toLowerCase();
 
-  // Coba exact match dulu
   const exact = blocks.find(b =>
     String(b.id).toLowerCase() === q ||
     String(b.kode || '').toLowerCase() === q ||
@@ -277,7 +296,6 @@ function resolveBlock(text) {
   );
   if (exact) return exact;
 
-  // Kalau tidak ada exact, cari contains
   const cand = blocks.find(b =>
     String(b.id).toLowerCase().includes(q) ||
     String(b.kode || '').toLowerCase().includes(q) ||
@@ -388,8 +406,14 @@ function prefillIfEdit() {
   $('#edit-banner').style.display = 'inline-block';
   $('#in-date').value = rec.tanggal || fmtDateISO();
 
-  // isi kotak blok dengan label ramah
-  const b = resolveBlock(rec.blok_id) || resolveBlock(rec.blok_id + '') || (getVisibleBlocks().find(x => String(x.id) === String(rec.blok_id)) || null);
+  // ✅ FIX: cache visible blocks harus sudah siap
+  const blocks = getVisibleBlocksSync();
+
+  const b =
+    resolveBlock(rec.blok_id) ||
+    resolveBlock(String(rec.blok_id || '')) ||
+    (blocks.find(x => String(x.id) === String(rec.blok_id)) || null);
+
   if (b) {
     const nf = new Intl.NumberFormat('id-ID', {
       minimumFractionDigits: 2,
@@ -416,11 +440,18 @@ function prefillIfEdit() {
   return editId;
 }
 
-export function render(app) {
+export async function render(app) {
   app.innerHTML = view();
-  fillBlockDatalist();
+
+  // ✅ load cache blok sekali, lalu isi datalist
+  await loadVisibleBlocks();
+  await loadKadvelMaster(); 
+  await fillBlockDatalist();
+
   bindCompute();
-  $('#btn-bulk-input') ?.addEventListener('click', openBulkModal);
+
+  // bulk button (cukup sekali)
+  $('#btn-bulk-input')?.addEventListener('click', openBulkModal);
 
   // event blok typing/blur → resolve
   $('#in-blok').addEventListener('change', () => {
@@ -432,7 +463,6 @@ export function render(app) {
     applyBlock(b);
   });
   $('#in-blok').addEventListener('input', () => {
-    // reset sementara agar tidak misleading
     SELECTED_BLOCK = null;
     $('#in-divisi').value = '';
     $('#in-kadvel').value = '';
@@ -440,25 +470,36 @@ export function render(app) {
 
   const editId = prefillIfEdit();
 
-  $('#btn-save').addEventListener('click', () => {
+  $('#btn-save').addEventListener('click', async () => {
     const rec = collect();
-    $('#btn-bulk-input') ?.addEventListener('click', openBulkModal);
+
     const err = validate(rec);
-    if (err) {
-      showToast(err);
+    if (err) { showToast(err); return; }
+
+    const role = (localStorage.getItem(Keys.ROLE) || '-').toLowerCase();
+    if (role === 'advisor'){
+      app.innerHTML = `
+        <div class="card">
+          <h3>Akses Ditolak</h3>
+          <p>Role <b>Advisor</b> tidak memiliki akses ke halaman Input.</p>
+        </div>
+      `;
       return;
     }
 
-    const list = LStore.getArr(Keys.INPUT_RECORDS);
+    // ✅ Ambil dari IndexedDB
+    const list = (await IStore.getArr(Keys.INPUT_RECORDS)) || [];
     const exist = list.find(r => r.local_id === rec.local_id);
 
-    // jika datang dari mode edit & kunci berubah, hapus record lama
+    // ✅ jika sedang edit dan local_id berubah → hapus record lama + keluarkan dari antrian sync
     if (editId && editId !== rec.local_id) {
       const filtered = list.filter(r => r.local_id !== editId);
-      LStore.setArr(Keys.INPUT_RECORDS, filtered);
-      const q = new Set(LStore.getArr(Keys.SYNC_QUEUE));
+      await IStore.setArr(Keys.INPUT_RECORDS, filtered);
+
+      const qArr = (await IStore.getArr(Keys.SYNC_QUEUE)) || [];
+      const q = new Set(qArr);
       q.delete(editId);
-      LStore.setArr(Keys.SYNC_QUEUE, [...q]);
+      await IStore.setArr(Keys.SYNC_QUEUE, [...q]);
     }
 
     if (exist) {
@@ -467,17 +508,15 @@ export function render(app) {
     }
     rec.updated_at = nowISO();
 
+    // ini tetap sesuai arsitektur Anda (sync.js yang mengurus penyimpanan record)
     upsertRecord(rec);
     SyncState.enqueue(rec.local_id);
 
     if (editId) sessionStorage.removeItem('edit.local_id');
 
     showToast('Tersimpan ke lokal & masuk antrian sinkron');
-
-    // 🔽 reset semua field kecuali tanggal
     resetFieldsAfterSave();
   });
-
 
   $('#btn-reset').addEventListener('click', () => {
     $('#in-blok').value = '';

@@ -4,7 +4,7 @@
 // =====================
 import { $ } from '../core/utils.js';
 import { API } from '../core/api.js';
-import { Keys } from '../core/storage.js';
+import { Keys, IStore } from '../core/storage.js';
 
 // ---- util kecil ----
 function safeSpinner(on){
@@ -83,7 +83,13 @@ function view(){
           <option value="admin">Admin</option>
           <option value="asisten">Asisten</option>
           <option value="mandor">Mandor</option>
+          <option value="advisor">Advisor</option>
         </select>
+      </div>
+      <div class="col" id="advisor-scope-wrap" style="display:none">
+        <label>Scope Estate (Advisor)</label>
+        <select id="advisor-estates" multiple size="6"></select>
+        <div class="hint">Pilih 1 atau lebih estate</div>
       </div>
       <div class="col">
         <label>Status</label>
@@ -148,6 +154,26 @@ async function loadUsers(){
     safeSpinner(false);
   }
 }
+
+async function fillAdvisorEstates(){
+  const sel = document.querySelector('#advisor-estates');
+  if (!sel) return;
+  const estates = await IStore.getArr(Keys.MASTER_ESTATE);
+  sel.innerHTML = (estates||[]).map(e =>
+    `<option value="${String(e.id)}">${String(e.nama||e.id)}</option>`
+  ).join('');
+}
+
+const roleSel = document.querySelector('#u-role');
+const wrap = document.querySelector('#advisor-scope-wrap');
+
+function toggleAdvisorScope(){
+  const role = (roleSel?.value||'').toLowerCase();
+  if (wrap) wrap.style.display = (role==='advisor') ? '' : 'none';
+}
+roleSel?.addEventListener('change', toggleAdvisorScope);
+toggleAdvisorScope();
+
 
 // ---- filter/sort/paging ----
 function filteredUsers(){
@@ -352,6 +378,14 @@ function openAddModal(){
     const role = wrap.querySelector('#m-role').value || 'mandor';
     const pass = wrap.querySelector('#m-pass').value || 'user123';
     if (!nik) { showToast('NIK wajib diisi'); return; }
+
+    let advisor_estate_ids = '';
+      if ((role||'').toLowerCase() === 'advisor'){
+        const sel = document.querySelector('#advisor-estates');
+        advisor_estate_ids = sel ? Array.from(sel.selectedOptions).map(o=>o.value).join(',') : '';
+      }
+
+      await API.userAdd({ nik, name, role, pass_hash, advisor_estate_ids });
 
     try{
       safeSpinner(true);
