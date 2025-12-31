@@ -4,18 +4,28 @@
 // =====================
 import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $ } from '../core/utils.js';
-import { Keys, LStore } from '../core/storage.js';
+import { Keys, LStore, IStore } from '../core/storage.js';
 import { SyncState, getRecord } from '../core/sync.js';
 import { API } from '../core/api.js';
 import { Progress } from '../core/progress.js';
 
 // ---------- Util tampilan ----------
 function _blokNameById(id){
-  const list = LStore.getArr(Keys.MASTER_BLOK) || [];
+  const list = SV_CACHE.blok || [];
   const b = list.find(x => String(x.id) === String(id));
   return b ? (b.nama || b.kode || b.id) : (id || '');
 }
 function _f2(n){ const v = Number(n); return Number.isFinite(v) ? v.toFixed(2) : ''; }
+
+// ---------- IndexedDB cache (source of truth) ----------
+const SV_CACHE = { blok:[], asisten:[], inputs:[], queue:[] };
+
+async function svReloadCache(){
+  SV_CACHE.blok    = (await IStore.getArr(Keys.MASTER_BLOK).catch(()=>[])) || [];
+  SV_CACHE.asisten = (await IStore.getArr(Keys.MASTER_ASISTEN).catch(()=>[])) || [];
+  SV_CACHE.inputs  = (await IStore.getArr(Keys.INPUT_RECORDS).catch(()=>[])) || [];
+  SV_CACHE.queue   = (await IStore.getArr(Keys.SYNC_QUEUE).catch(()=>[])) || [];
+}
 
 // ---------- Auth & izin ----------
 function _auth(){
@@ -32,9 +42,12 @@ function _authParams(){ const { nik, token } = _auth(); return { nik_auth: nik, 
 function _asistenDivisiSet(){
   const { nik, role } = _auth();
   if (role !== 'asisten') return new Set();
-  const rows = (LStore.getArr(Keys.MASTER_ASISTEN) || []);
-  return new Set(rows.filter(a => String(a.nik)===String(nik))
-                     .map(a => String(a.divisi_id||'')).filter(Boolean));
+  const rows = (SV_CACHE.asisten || []);
+  return new Set(
+    rows.filter(a => String(a.nik)===String(nik))
+        .map(a => String(a.divisi_id||''))
+        .filter(Boolean)
+  );
 }
 
 // Hanya ASISTEN boleh EDIT; Mandor tidak boleh EDIT sama sekali
@@ -115,14 +128,14 @@ function _setBusyUI(busy){
 // ---------- Data helpers ----------
 function statusIcon(st){ return st==='synced' ? '✅' : (st==='edited' ? '⭕' : '⬜'); }
 function _getSyncRows(filter='all'){
-  let rows=(LStore.getArr(Keys.INPUT_RECORDS)||[]).slice();
+  let rows = (SV_CACHE.inputs || []).slice();
   if (filter && filter!=='all') rows = rows.filter(r=> r.sync_status===filter);
   return rows.map(r=>({ ...r, _blokName:_blokNameById(r.blok_id) }));
 }
 
 // ---------- Ribbon Online/Offline ----------
 function getSyncStats(){
-  const rows = LStore.getArr(Keys.INPUT_RECORDS) || [];
+  const rows = SV_CACHE.inputs || [];
   const total   = rows.length;
   const pending = rows.filter(r=>r.sync_status==='pending').length;
   const edited  = rows.filter(r=>r.sync_status==='edited').length;
@@ -391,6 +404,7 @@ function attachRowHandlers(){
       }finally{
         Progress.close();
         _setBusyUI(false);
+        await svReloadCache();
         refresh(); // re-render
       }
     });
@@ -402,28 +416,34 @@ function _collectSelectedLocalIds(){
   return Array.from(document.querySelectorAll('.ck-row:checked')).map(x=> x.getAttribute('data-id'));
 }
 function _rowsByIds(ids){
-  const set=new Set(ids); return (LStore.getArr(Keys.INPUT_RECORDS)||[]).filter(r=> set.has(r.local_id));
+  const set=new Set(ids);
+  return (SV_CACHE.inputs || []).filter(r=> set.has(r.local_id));
 }
-function _markSynced(localIds){
+async function _markSynced(localIds){
   if (!localIds.length) return;
-  const set=new Set(localIds);
-  const rows=(LStore.getArr(Keys.INPUT_RECORDS)||[]).map(r=>{
+  const set = new Set(localIds);
+
+  const rows = (SV_CACHE.inputs || []).map(r=>{
     if (set.has(r.local_id)) return { ...r, sync_status:'synced' };
     return r;
   });
-  LStore.setArr(Keys.INPUT_RECORDS, rows);
+  await IStore.setArr(Keys.INPUT_RECORDS, rows);
+
   // bersihkan antrean
-  const q = new Set(LStore.getArr(Keys.SYNC_QUEUE)||[]);
+  const q = new Set(SV_CACHE.queue || []);
   localIds.forEach(id=> q.delete(id));
-  LStore.setArr(Keys.SYNC_QUEUE, [...q]);
+  await IStore.setArr(Keys.SYNC_QUEUE, [...q]);
+
+  await svReloadCache();
 }
 
 // Simpan record lokal (dipakai saat menyetel server_key hasil insert)
-function _upsertLocalRecord(updated){
-  const list = LStore.getArr(Keys.INPUT_RECORDS) || [];
+async function _upsertLocalRecord(updated){
+  const list = (SV_CACHE.inputs || []).slice();
   const idx = list.findIndex(r => r.local_id === updated.local_id);
   if (idx >= 0) list[idx] = updated; else list.push(updated);
-  LStore.setArr(Keys.INPUT_RECORDS, list);
+  await IStore.setArr(Keys.INPUT_RECORDS, list);
+  await svReloadCache();
 }
 
 // ---------- Push satu record (cek-exists → update/insert) ----------
@@ -468,21 +488,33 @@ async function pushOne(rec){
     try{
       const ins = await API.pushInsert({ record: rec, ..._authParams() });
       if (!ins || !ins.ok) throw new Error(ins?.error || 'insert gagal');
-      rec.server_key = key; _upsertLocalRecord(rec);
+      rec.server_key = key; await _upsertLocalRecord(rec);
     }catch(errIns){
       if (!hasJSONPFallback()) throw errIns;
       const rj = await gasJSONP('pusingan.insert', { payload: JSON.stringify(rec), ..._authParams() });
       if (!rj || !rj.ok) throw new Error(rj?.error || 'insert(JSONP) gagal');
-      rec.server_key = key; _upsertLocalRecord(rec);
+      rec.server_key = key; await _upsertLocalRecord(rec);
     }
   }
 
   // 4) Tandai synced & dequeue
   rec.sync_status = 'synced';
-  const list = LStore.getArr(Keys.INPUT_RECORDS) || [];
+
+  // update record di IndexedDB
+  const list = (SV_CACHE.inputs || []).slice();
   const idx = list.findIndex(r=> r.local_id === rec.local_id);
-  if (idx >= 0){ list[idx] = rec; LStore.setArr(Keys.INPUT_RECORDS, list); }
-  SyncState.dequeue(rec.local_id);
+  if (idx >= 0) list[idx] = rec; else list.push(rec);
+  await IStore.setArr(Keys.INPUT_RECORDS, list);
+
+  // dequeue di IndexedDB juga (jaga konsisten)
+  const q = new Set(SV_CACHE.queue || []);
+  q.delete(rec.local_id);
+  await IStore.setArr(Keys.SYNC_QUEUE, [...q]);
+
+  // keep compatibility (kalau SyncState masih dipakai modul lain)
+  try{ SyncState.dequeue(rec.local_id); }catch(_){}
+
+  await svReloadCache();
 }
 
 // ---------- Bulk sync (try bulk → fallback per-record JSONP) ----------
@@ -517,7 +549,7 @@ async function doSync(localIds){
   try{
     const res = await syncBulk(records);
     if (!res || !res.ok) throw new Error(res?.error || 'Sync gagal');
-    _markSynced(records.map(r=>r.local_id));
+    await _markSynced(records.map(r=>r.local_id));
     showToast(`Sinkron sukses: ${records.length} baris`);
   }catch(e){
     showToast(e.message || 'Gagal sinkron sebagian/semua');
@@ -530,11 +562,14 @@ async function doSync(localIds){
 
 // ---------- Mount ----------
 function bind(){
-  _loadState(); 
-  renderSyncRibbon(); 
-  renderSyncTable(); 
-  attachRowHandlers();               // penting: initial binding
-  runOfflineWarmupOnce();
+  (async ()=>{
+    _loadState();
+    await svReloadCache();     // <-- penting
+    renderSyncRibbon();
+    renderSyncTable();
+    attachRowHandlers();
+    runOfflineWarmupOnce();
+  })().catch(console.warn);
 
   $('#btn-export').addEventListener('click', _exportCSV);
   $('#f-status').addEventListener('change', ()=>{ SV_PAGE=1; renderSyncRibbon(); renderSyncTable(); _saveState(); });

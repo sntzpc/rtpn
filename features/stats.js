@@ -2,7 +2,16 @@
 // File: features/stats.js
 // =====================
 import { $, ensureNumber } from '../core/utils.js';
-import { Keys, LStore } from '../core/storage.js';
+import { Keys, LStore, IStore } from '../core/storage.js';
+
+// ---------- IndexedDB cache (source of truth) ----------
+const ST_CACHE = { blok:[], divisi:[], inputs:[] };
+
+async function stReloadCache(){
+  ST_CACHE.blok   = (await IStore.getArr(Keys.MASTER_BLOK).catch(()=>[]))   || [];
+  ST_CACHE.divisi = (await IStore.getArr(Keys.MASTER_DIVISI).catch(()=>[])) || [];
+  ST_CACHE.inputs = (await IStore.getArr(Keys.INPUT_RECORDS).catch(()=>[])) || [];
+}
 
 // Ambil angka pertama yang valid (>0) dari beberapa nama field
 function _firstNum(obj, keys){
@@ -15,17 +24,14 @@ function _firstNum(obj, keys){
 
 // BJR dari master blok (mencoba beberapa kemungkinan nama kolom)
 function _bjrFromMaster(blok_id){
-  const blk = (LStore.getArr(Keys.MASTER_BLOK) || [])
-    .find(x => String(x.id) === String(blok_id));
+  const blk = (ST_CACHE.blok || []).find(x => String(x.id) === String(blok_id));
   if (!blk) return 0;
   return _firstNum(blk, ['bjr','bjr_kg','bjrKg','rata_bjr','rataBjr','avg_bjr','bjr_kg_per_jjg']);
 }
 
-
 // ambil BJR dari master blok bila record tidak menyimpan field bjr
 function _bjrOf(blok_id){
-  const b = (LStore.getArr(Keys.MASTER_BLOK) || [])
-    .find(x => String(x.id) === String(blok_id));
+  const b = (ST_CACHE.blok || []).find(x => String(x.id) === String(blok_id));
   return ensureNumber(b?.bjr, 0); // kg/tandan
 }
 
@@ -34,7 +40,7 @@ function monthOptions(){
 }
 function yearOptions(){
   const years = new Set();
-  const recs = LStore.getArr(Keys.INPUT_RECORDS);
+  const recs = (ST_CACHE.inputs || []);
   recs.forEach(r=> years.add((r.tanggal||'').slice(0,4)) );
   const arr = [...years].filter(Boolean).sort();
   const current = new Date().getFullYear();
@@ -42,7 +48,7 @@ function yearOptions(){
   return arr.map(y=>`<option value="${y}">${y}</option>`).join('');
 }
 function divisiOptions(){
-  const divisi = LStore.getArr(Keys.MASTER_DIVISI) || [];
+  const divisi = (ST_CACHE.divisi || []);
   return '<option value="">Semua Divisi</option>' + divisi
     .map(d=>`<option value="${d.id}">${d.nama||d.kode||d.id}</option>`).join('');
 }
@@ -88,7 +94,7 @@ function getFilters(){
 }
 
 function filterRecords(month, year, divisiId){
-  return (LStore.getArr(Keys.INPUT_RECORDS) || []).filter(r=>{
+  return (ST_CACHE.inputs || []).filter(r=>{
     if (!r.tanggal) return false;
     const y = r.tanggal.slice(0,4);
     const m = Number(r.tanggal.slice(5,7));
@@ -217,15 +223,32 @@ function run(){
   $('#top-mandor').innerHTML = tableMandor( computeTopMandor(recs, topn) );
 }
 
-function bind(){
-  // Prefill selector Tahun (harus setelah render view)
-  $('#s-year').innerHTML = yearOptions();
+async function bind(){
+  // 1) load data dari IndexedDB dulu
+  await stReloadCache();
+
+  // 2) isi dropdown setelah data siap
+  $('#s-year').innerHTML   = yearOptions();
   $('#s-divisi').innerHTML = divisiOptions();
 
-  $('#s-run').addEventListener('click', run);
+  // default tahun = tahun terbaru yang ada datanya (kalau ada)
+  try{
+    const years = (ST_CACHE.inputs||[])
+      .map(r => (r.tanggal||'').slice(0,4))
+      .filter(Boolean)
+      .sort();
+    const last = years[years.length-1];
+    if (last) $('#s-year').value = String(last);
+  }catch(_){}
 
-  // Jalankan sekali dengan default
+  $('#s-run').addEventListener('click', async ()=>{
+    // kalau ada perubahan data dari halaman lain, aman untuk reload cepat
+    await stReloadCache();
+    run();
+  });
+
+  // 3) Jalankan sekali
   run();
 }
 
-export function render(app){ app.innerHTML = view(); bind(); }
+export function render(app){ app.innerHTML = view(); bind().catch(console.warn); }

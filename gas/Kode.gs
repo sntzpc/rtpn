@@ -24,6 +24,7 @@ const SHEET = {
   MASTER_MANDOR:  'master_mandor',
   MASTER_ASISTEN: 'master_asisten',
   MASTER_LIBUR:   'master_libur',
+  ADVISOR_SCOPE: 'advisor_scope',
 };
 
 const HEAD = {
@@ -38,6 +39,7 @@ const HEAD = {
   [SHEET.MASTER_MANDOR]:  ['nik','nama','divisi_id'],
   [SHEET.MASTER_ASISTEN]: ['nik','nama','divisi_id'],
   [SHEET.MASTER_LIBUR]: ['tanggal', 'keterangan'],
+  [SHEET.ADVISOR_SCOPE]: ['nik','estate_ids'], // "E01,E02"
 };
 
 // ===== JSON / JSONP Helpers (anti-CORS) =====
@@ -108,6 +110,13 @@ function _asistenDivisiSet(nik){
   return new Set(ids);
 }
 
+function _advisorEstateSet(nik){
+  const rows = readAllAsObjects(SHEET.ADVISOR_SCOPE);
+  const row  = rows.find(r => String(r.nik) === String(nik));
+  const raw  = row ? String(row.estate_ids||'').trim() : '';
+  const ids  = raw ? raw.split(',').map(s=>s.trim()).filter(Boolean) : [];
+  return new Set(ids);
+}
 
 function readAllAsObjects(sheetName){
   const sh = getOrCreateSheet(sheetName);
@@ -264,18 +273,34 @@ function api_auth_login(p){
 
 // ===== USER MGMT =====
 function api_user_add(p){
-    assertAuth(p, ['admin']);
-  // Tambah / Update user (key = nik)
+  assertAuth(p, ['admin']);
+
   const nik  = (p.nik||'').trim(); if (!nik) return err('NIK_REQUIRED');
   const name = (p.name||'').trim() || nik;
   const role = (p.role||'').toLowerCase();
-  if (!['mandor','asisten','admin'].includes(role)) return err('ROLE_INVALID'); // <-- tambahkan 'admin'
-  const pass_hash = (p.pass_hash||'1971415050'); // default = hash('user123')
+
+  // ✅ tambah advisor
+  if (!['mandor','asisten','admin','advisor'].includes(role)) return err('ROLE_INVALID');
+
+  const pass_hash = (p.pass_hash||'1971415050');
   const status = (p.status||'active');
 
   ensureSetup();
-  const row = { nik, name, role, pass_hash, status };
-  appendOrUpdateByKey(SHEET.USERS, 'nik', row);
+  appendOrUpdateByKey(SHEET.USERS, 'nik', { nik, name, role, pass_hash, status });
+
+  // ✅ kalau advisor, simpan scope
+  if (role === 'advisor'){
+    const estate_ids = String(p.advisor_estate_ids||'').trim(); // "E01,E02"
+    appendOrUpdateByKey(SHEET.ADVISOR_SCOPE, 'nik', { nik, estate_ids });
+  } else {
+    // kalau role bukan advisor, boleh bersihkan scope (opsional)
+    const r = findRowByValue(SHEET.ADVISOR_SCOPE, 'nik', nik);
+    if (r){
+      const sh = getOrCreateSheet(SHEET.ADVISOR_SCOPE);
+      sh.deleteRow(r);
+    }
+  }
+
   return ok({ upsert:true, nik });
 }
 
@@ -307,10 +332,21 @@ function api_user_delete(p){
 
 
 // ===== USER MGMT =====
-function api_user_list(p){            // <<< terima p
-  assertAuth(p, ['admin']);           // <<< guard admin
+function api_user_list(p){
+  assertAuth(p, ['admin']);
   ensureSetup();
-  return ok({ users: readAllAsObjects(SHEET.USERS) });
+
+  const users = readAllAsObjects(SHEET.USERS);
+  const scopes = readAllAsObjects(SHEET.ADVISOR_SCOPE);
+  const mapScope = {};
+  scopes.forEach(s => mapScope[String(s.nik)] = String(s.estate_ids||''));
+
+  const merged = users.map(u => ({
+    ...u,
+    advisor_estate_ids: mapScope[String(u.nik)] || ''
+  }));
+
+  return ok({ users: merged });
 }
 
 
@@ -319,7 +355,7 @@ function api_master_pull(p){
   ensureSetup();
 
   // Ambil identitas yang SUDAH diverifikasi
-  const u    = assertAuth(p, ['admin','asisten','mandor']);
+  const u    = assertAuth(p, ['admin','asisten','mandor','advisor']);
   const role = String(u.role||'').toLowerCase();
   const nik  = String(u.nik||'');
 
@@ -340,6 +376,35 @@ function api_master_pull(p){
   // ==== ADMIN: full akses ====
   if (role==='admin'){
     return ok({ company, estate, divisi, kadvel, blok, mandor, asisten, libur });
+  }
+
+  // ✅ ADVISOR: seperti admin tapi estate dibatasi
+  if (role==='advisor'){
+    const allowedEstate = _advisorEstateSet(nik);
+    if (!allowedEstate.size){
+      return ok({ company:[], estate:[], divisi:[], kadvel:[], blok:[], mandor:[], asisten:[], libur });
+    }
+    const estFiltered = estate.filter(e => allowedEstate.has(String(e.id)));
+    const divFiltered = divisi.filter(d => allowedEstate.has(String(d.estate_id)));
+    const divSet = new Set(divFiltered.map(d=>String(d.id)));
+    const kadFiltered  = kadvel.filter(k => divSet.has(String(k.divisi_id)));
+    const blokFiltered = blok.filter(b => divSet.has(String(b.divisi_id)));
+    const mandFiltered = mandor.filter(m => divSet.has(String(m.divisi_id)));
+    const asisFiltered = asisten.filter(a => divSet.has(String(a.divisi_id)));
+
+    const compIdSet = new Set(estFiltered.map(e=>String(e.company_id)));
+    const compFiltered = company.filter(c => compIdSet.has(String(c.id)));
+
+    return ok({
+      company: compFiltered,
+      estate : estFiltered,
+      divisi : divFiltered,
+      kadvel : kadFiltered,
+      blok   : blokFiltered,
+      mandor : mandFiltered,
+      asisten: asisFiltered,
+      libur
+    });
   }
 
   // ==== ASISTEN: batasi hanya divisi yang dipegang ====
@@ -552,20 +617,27 @@ function api_pusingan_update(p){
 function api_actual_pull(p){
   ensureSetup();
 
-  // Ambil identitas yang SUDAH diverifikasi
-  const u    = assertAuth(p, ['admin','asisten','mandor']);
+  // ✅ tambah advisor
+  const u    = assertAuth(p, ['admin','asisten','mandor','advisor']);
   const role = String(u.role||'').toLowerCase();
   const nik  = String(u.nik||'');
 
-  // parameter periode (opsional) — ini boleh dari FE
-  const month = String(p.month||'').trim();           // '1'..'12'
-  const year  = String(p.year ||'').trim();           // '2025'
-  const ym    = (month && year) ? (year + '-' + ('0'+month).slice(-2)) : '';
+  // parameter filter (opsional)
+  const year = String(p.year || '').trim(); // "2025"
+  const estateIdsRaw = String(p.estate_ids || '').trim(); // "E01,E02" atau "" untuk all
+  const estateSetReq = estateIdsRaw ? new Set(estateIdsRaw.split(',').map(s=>s.trim()).filter(Boolean)) : null;
 
-  // ambil semua baris dari sheet PUSINGAN
+  // map divisi_id -> estate_id
+  const divMaster = readAllAsObjects(SHEET.MASTER_DIVISI);
+  const divToEstate = {};
+  divMaster.forEach(d => divToEstate[String(d.id)] = String(d.estate_id||''));
+
+  // whitelist role
+  const allowDiv = (role==='asisten') ? _asistenDivisiSet(nik) : null;
+  const allowEstateAdvisor = (role==='advisor') ? _advisorEstateSet(nik) : null;
+
   const rows = readAllAsObjects(SHEET.PUSINGAN);
 
-  // helper normalisasi tanggal ke 'YYYY-MM-DD'
   function normDate(v){
     if (v instanceof Date){
       return Utilities.formatDate(v, 'Asia/Jakarta', 'yyyy-MM-dd');
@@ -573,24 +645,31 @@ function api_actual_pull(p){
     return String(v||'').trim();
   }
 
-  // untuk Asisten: whitelist divisi dari mapping
-  const allowDiv = (role==='asisten') ? _asistenDivisiSet(nik) : null;
-
   const out = [];
   for (let i=0; i<rows.length; i++){
     const r = rows[i]; if (!r) continue;
+
     const tgl = normDate(r.tanggal || '');
+    const divId = String(r.divisi_id||'');
+    const estId = divToEstate[divId] || '';
 
     // filter role
     if (role === 'mandor' && String(r.nik_mandor||'') !== nik) continue;
+
     if (role === 'asisten'){
-      const divId = String(r.divisi_id||'');
       if (allowDiv && allowDiv.size && !allowDiv.has(divId)) continue;
     }
-    // admin: tanpa filter
 
-    // filter periode (opsional)
-    if (ym && !String(tgl).startsWith(ym)) continue;
+    if (role === 'advisor'){
+      if (!allowEstateAdvisor || !allowEstateAdvisor.size) continue;
+      if (!allowEstateAdvisor.has(estId)) continue;
+    }
+
+    // filter tahun
+    if (year && !String(tgl).startsWith(year + '-')) continue;
+
+    // filter estate_ids dari FE (jika dipilih)
+    if (estateSetReq && estateSetReq.size && !estateSetReq.has(estId)) continue;
 
     const obj = {};
     HEAD[SHEET.PUSINGAN].forEach(h => obj[h] = r[h] ?? '');
@@ -607,6 +686,123 @@ function api_actual_pull(p){
   return ok({ rows: out });
 }
 
+// ===== Guard tulis Pusingan (baru) =====
+function _pusinganExistsByKey(key){
+  const row = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
+  return row > 0;
+}
+
+function assertMayWritePusingan(user, rec, mode){ // mode: 'insert' | 'update'
+  var role = String(user.role||'').toLowerCase();
+  if (role === 'admin') return; // full access
+
+  if (role === 'mandor'){
+    if (mode === 'update') throw new Error('FORBIDDEN_MANDOR_NO_UPDATE'); // mandor dilarang update
+    if (String(rec.nik_mandor||'') !== String(user.nik||'')) {
+      throw new Error('FORBIDDEN_MANDOR_NOT_OWNER'); // insert hanya miliknya
+    }
+    return;
+  }
+
+  if (role === 'asisten'){
+    var allow = _asistenDivisiSet(user.nik); // Set divisi_id
+    if (allow && allow.size && !allow.has(String(rec.divisi_id||''))) {
+      throw new Error('FORBIDDEN_ASISTEN_OUT_OF_SCOPE');
+    }
+    return;
+  }
+
+  throw new Error('FORBIDDEN_ROLE');
+}
+
+// ===== PUSINGAN CHECK / INSERT / UPDATE =====
+function api_pusingan_check(p){
+  ensureSetup();
+  var u = assertAuth(p, ['admin','asisten','mandor','advisor']); // pastikan request terautentikasi
+  const key = p.key||''; if (!key) return err('MISSING_KEY');
+  const row = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
+  if (!row) return ok({ exists:false });
+  const sh = getOrCreateSheet(SHEET.PUSINGAN);
+  const head = HEAD[SHEET.PUSINGAN];
+  const vals = sh.getRange(row,1,1,head.length).getValues()[0];
+  const obj = {}; head.forEach((h,i)=> obj[h]=vals[i]);
+  return ok({ exists:true, row, server_id: obj.server_id||'' });
+}
+
+function api_pusingan_insert(p){
+  ensureSetup();
+  var u = assertAuth(p, ['admin','asisten','mandor','advisor']);
+  const payload = p.payload; if (!payload) return err('MISSING_PAYLOAD');
+  let rec; try{ rec = JSON.parse(payload); }catch(e){ return err('BAD_JSON'); }
+
+  // Izin: mandor hanya insert miliknya; asisten sesuai divisi
+  assertMayWritePusingan(u, rec, 'insert');
+
+  const now = new Date().toISOString();
+  const key = serverKeyFromRecord(rec);
+  const found = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
+  if (found){
+    const sh = getOrCreateSheet(SHEET.PUSINGAN);
+    const head = HEAD[SHEET.PUSINGAN];
+    const vals = sh.getRange(found,1,1,head.length).getValues()[0];
+    const obj = {}; head.forEach((h,i)=> obj[h]=vals[i]);
+    return ok({ already_exists:true, server_id: obj.server_id||'', server_key:key });
+  }
+
+  const rowObj = {};
+  HEAD[SHEET.PUSINGAN].forEach(h => rowObj[h] = rec[h] ?? '');
+  rowObj.server_key = key;
+  rowObj.server_id  = Utilities.getUuid();
+  rowObj.created_at = rec.created_at || now;
+  rowObj.updated_at = now;
+
+  const lock = LockService.getScriptLock(); lock.waitLock(30*1000);
+  try{ appendOrUpdateByKey(SHEET.PUSINGAN,'server_id',rowObj); }
+  finally{ lock.releaseLock(); }
+
+  return ok({ server_id: rowObj.server_id, server_key: key });
+}
+
+function api_pusingan_update(p){
+  ensureSetup();
+  var u = assertAuth(p, ['admin','asisten','mandor', 'advisor']); // mandor akan ditolak oleh assertMayWritePusingan
+  const key = p.key||''; if (!key) return err('MISSING_KEY');
+  const payload = p.payload; if (!payload) return err('MISSING_PAYLOAD');
+  let rec; try{ rec = JSON.parse(payload); }catch(e){ return err('BAD_JSON'); }
+
+  // Izin: mandor TIDAK boleh update; asisten boleh sesuai divisi
+  assertMayWritePusingan(u, rec, 'update');
+
+  const row = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
+  const now = new Date().toISOString();
+
+  const rowObj = {};
+  HEAD[SHEET.PUSINGAN].forEach(h => rowObj[h] = rec[h] ?? '');
+  rowObj.server_key = key;
+
+  const lock = LockService.getScriptLock(); lock.waitLock(30*1000);
+  try{
+    if (row){
+      const sh = getOrCreateSheet(SHEET.PUSINGAN);
+      const head = HEAD[SHEET.PUSINGAN];
+      const old = sh.getRange(row,1,1,head.length).getValues()[0];
+      const oldObj = {}; head.forEach((h,i)=> oldObj[h]=old[i]);
+      rowObj.server_id  = oldObj.server_id || Utilities.getUuid();
+      rowObj.created_at = oldObj.created_at || rec.created_at || now;
+      rowObj.updated_at = now;
+      const vals = head.map(h => rowObj[h] ?? '');
+      sh.getRange(row,1,1,head.length).setValues([vals]);
+      return ok({ server_id: rowObj.server_id, server_key:key, updated:true });
+    } else {
+      // Tidak ditemukan → buat baru (tetap izinkan utk asisten/admin; mandor sudah ditolak di atas bila mode 'update')
+      rowObj.server_id  = Utilities.getUuid();
+      rowObj.created_at = rec.created_at || now;
+      rowObj.updated_at = now;
+      appendOrUpdateByKey(SHEET.PUSINGAN,'server_id',rowObj);
+      return ok({ server_id: rowObj.server_id, server_key:key, inserted:true });
+    }
+  } finally { lock.releaseLock(); }
+}
 
 
 // ===== Router =====
