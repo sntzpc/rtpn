@@ -47,7 +47,9 @@ export async function bulkSyncByQueue(){
     return { ok:true, synced:0 };
   }
 
-  const res = await API.syncBulk({ records: all });
+  const nik_auth = localStorage.getItem(Keys.NIK) || '';
+  const token    = localStorage.getItem(Keys.TOKEN) || '';
+  const res = await API.syncBulk({ records: all, nik_auth, token });
   if (res && res.ok){
     await SyncState.setQueue([]);
     return { ok:true, synced: all.length };

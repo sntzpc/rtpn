@@ -31,11 +31,29 @@ async function svReloadCache(){
 function _auth(){
   try{
     const s = (window.SESSION && SESSION.profile && SESSION.profile()) || {};
-    const nik = s.nik || localStorage.getItem(Keys.NIK) || localStorage.getItem('pp2:session.nik') || '';
-    const token = s.token || localStorage.getItem(Keys.TOKEN) || localStorage.getItem('pp2:session.token') || '';
-    const role = String((s.role || localStorage.getItem('pp2:session.role') || '')).toLowerCase();
+
+    const nik = s.nik
+      || localStorage.getItem(Keys.NIK)
+      || localStorage.getItem('pp2:session.nik')
+      || '';
+
+    const token = s.token
+      || localStorage.getItem(Keys.TOKEN)
+      || localStorage.getItem('pp2:session.token')
+      || '';
+
+    // ✅ FIX: baca role dari Keys.ROLE juga
+    const role = String(
+      s.role
+      || localStorage.getItem(Keys.ROLE)
+      || localStorage.getItem('pp2:session.role')
+      || ''
+    ).toLowerCase();
+
     return { nik, token, role };
-  }catch(_){ return { nik:'', token:'', role:'' }; }
+  }catch(_){
+    return { nik:'', token:'', role:'' };
+  }
 }
 function _authParams(){ const { nik, token } = _auth(); return { nik_auth: nik, token }; }
 
@@ -376,11 +394,11 @@ function attachRowHandlers(){
 
   // Edit → hanya asisten yang lolos _canEdit()
   document.querySelectorAll('#sync-table button[data-edit]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
+    btn.addEventListener('click', async ()=>{
       const id = btn.getAttribute('data-edit');
-      const rec = getRecord(id);
+      const rec = await getRecord(id); // ✅ FIX: await
+      if (!rec) { showToast('Data tidak ditemukan'); return; }
       if (!_canEdit(rec)) { showToast('Anda tidak berwenang mengedit baris ini'); return; }
-      // Info: jika sudah synced, asisten mengedit akan overwrite saat push (aman)
       sessionStorage.setItem('edit.local_id', id);
       location.hash = '#/input';
     });
@@ -390,8 +408,9 @@ function attachRowHandlers(){
   document.querySelectorAll('#sync-table button[data-push]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
       const id = btn.getAttribute('data-push');
-      const rec = getRecord(id);
-      if (!rec) return;
+      const rec = await getRecord(id); // ✅ FIX: await
+      if (!rec) { showToast('Data tidak ditemukan'); return; }
+
       if (!_canPush(rec)) { showToast('Anda tidak berwenang push baris ini'); return; }
       try{
         _setBusyUI(true);
@@ -405,7 +424,7 @@ function attachRowHandlers(){
         Progress.close();
         _setBusyUI(false);
         await svReloadCache();
-        refresh(); // re-render
+        refresh();
       }
     });
   });
@@ -536,11 +555,34 @@ async function syncBulk(records){
 }
 
 // ---------- Eksekusi sync ----------
-async function doSync(localIds){
-  if (!localIds.length){ showToast('Pilih data terlebih dulu'); return; }
-  // filter lagi berdasarkan _canPush (supaya tombol "Sync Semua" patuh izin)
-  const records = _rowsByIds(localIds).filter(_canPush);
-  if (!records.length){ showToast('Tidak ada data yang boleh disinkron'); return; }
+async function doSync(localIds, opt={ source:'selected' }){
+  const src = opt?.source || 'selected';
+
+  // ✅ kalau tombol "Terpilih" tapi memang tidak ada yang dicentang
+  if (!localIds || !localIds.length){
+    showToast(src==='selected' ? 'Pilih data terlebih dulu' : 'Tidak ada data untuk disinkron');
+    return;
+  }
+
+  // ✅ pastikan cache terbaru sebelum proses (biar tidak stale)
+  await svReloadCache();
+
+  // ambil record berdasarkan ids yang diminta
+  const requested = _rowsByIds(localIds);
+
+  if (!requested.length){
+    showToast('Data tidak ditemukan di lokal');
+    return;
+  }
+
+  // saring lagi berdasarkan izin
+  const records = requested.filter(_canPush);
+
+  // ✅ pesan yang benar: bukan "pilih data", tapi "tidak eligible"
+  if (!records.length){
+    showToast('Data yang dipilih tidak memiliki izin untuk disinkron (cek role/divisi/nik mandor)');
+    return;
+  }
 
   _setBusyUI(true);
   Progress.open({ title:'Sinkronisasi', subtitle:'Mengirim data…' });
@@ -549,6 +591,7 @@ async function doSync(localIds){
   try{
     const res = await syncBulk(records);
     if (!res || !res.ok) throw new Error(res?.error || 'Sync gagal');
+
     await _markSynced(records.map(r=>r.local_id));
     showToast(`Sinkron sukses: ${records.length} baris`);
   }catch(e){
@@ -556,7 +599,9 @@ async function doSync(localIds){
   }finally{
     Progress.close();
     _setBusyUI(false);
-    renderSyncRibbon(); renderSyncTable();
+    await svReloadCache();
+    renderSyncRibbon();
+    renderSyncTable();
   }
 }
 
@@ -580,14 +625,15 @@ function bind(){
   $('#btn-sync-all').addEventListener('click', ()=>{
     const filter = $('#f-status').value || 'all';
     const rows = _getSyncRows(filter);
-    const ids  = rows.filter(_canPush).map(r=> r.local_id);
-    doSync(ids);
+
+    // ✅ kirim semua id sesuai filter (doSync yang akan saring eligible)
+    const ids = rows.map(r=> r.local_id);
+    doSync(ids, { source:'all' });
   });
   // Sync terpilih → saring dengan _canPush
   $('#btn-sync-selected').addEventListener('click', ()=>{
     const idsSel = _collectSelectedLocalIds();
-    const ids = _rowsByIds(idsSel).filter(_canPush).map(r=>r.local_id);
-    doSync(ids);
+    doSync(idsSel, { source:'selected' }); // ✅ kirim mentah
   });
 
   // Online/offline → update ribbon
