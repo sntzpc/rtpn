@@ -62,6 +62,25 @@ async function _fetchJSON(params){
   return res.json();
 }
 
+// POST form-encoded (untuk payload besar, mis. sync.bulk).
+// GAS menerima parameter form lewat e.parameter di doPost.
+async function _postJSON(params){
+  const body = new URLSearchParams();
+  Object.entries(params || {}).forEach(([k,v])=>{
+    if (v != null) body.append(k, String(v));
+  });
+  // text/plain agar tidak memicu CORS preflight ke Apps Script
+  const res = await fetch(BASE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+    body: body.toString(),
+    credentials: 'omit',
+    cache: 'no-store',
+  });
+  if (!res.ok) throw new Error('Network error '+res.status);
+  return res.json();
+}
+
 export const API = {
   // expose untuk dicek di UI (settings.js)
   baseUrl: BASE_URL,
@@ -103,18 +122,23 @@ export const API = {
   },
 
   // PUSINGAN
-  async pushInsert({ record }) {
-    return _fetchJSON(sessionAttach({ route:'pusingan.insert', payload: JSON.stringify(record) }));
+  async pushInsert({ record, nik_auth, token }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.insert', payload: JSON.stringify(record), ...(nik_auth?{nik_auth}:{}) , ...(token?{token}:{}) }));
   },
-  async pushUpdate({ key, record }) {
-    return _fetchJSON(sessionAttach({ route:'pusingan.update', key, payload: JSON.stringify(record) }));
+  async pushUpdate({ key, record, nik_auth, token }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.update', key, payload: JSON.stringify(record), ...(nik_auth?{nik_auth}:{}) , ...(token?{token}:{}) }));
   },
-  async checkKey({ key }) {
-    return _fetchJSON(sessionAttach({ route:'pusingan.check', key }));
+  async checkKey({ key, nik_auth, token }) {
+    return _fetchJSON(sessionAttach({ route:'pusingan.check', key, ...(nik_auth?{nik_auth}:{}) , ...(token?{token}:{}) }));
   },
 
-  // OFFLINE → ONLINE: bulk sync (pastikan endpoint tersedia di GAS bila ingin dipakai)
-  async syncBulk({ records }) {
-    return _fetchJSON(sessionAttach({ route:'sync.bulk', payload: JSON.stringify(records || []) }));
+  // OFFLINE → ONLINE: bulk sync via POST (payload besar aman, tanpa batas URL)
+  async syncBulk({ records, nik_auth, token }) {
+    return _postJSON(sessionAttach({
+      route:'sync.bulk',
+      payload: JSON.stringify(records || []),
+      ...(nik_auth?{nik_auth}:{}),
+      ...(token?{token}:{}),
+    }));
   },
 };

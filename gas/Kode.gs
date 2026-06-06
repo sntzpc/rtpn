@@ -534,85 +534,6 @@ function api_master_push(p){
 }
 
 
-// ===== PUSINGAN CHECK / INSERT / UPDATE =====
-function api_pusingan_check(p){
-  ensureSetup();
-  const key = p.key||''; if (!key) return err('MISSING_KEY');
-  const row = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
-  if (!row) return ok({ exists:false });
-  const sh = getOrCreateSheet(SHEET.PUSINGAN);
-  const head = HEAD[SHEET.PUSINGAN];
-  const vals = sh.getRange(row,1,1,head.length).getValues()[0];
-  const obj = {}; head.forEach((h,i)=> obj[h]=vals[i]);
-  return ok({ exists:true, row, server_id: obj.server_id||'' });
-}
-
-function api_pusingan_insert(p){
-  ensureSetup();
-  const payload = p.payload; if (!payload) return err('MISSING_PAYLOAD');
-  let rec; try{ rec = JSON.parse(payload); }catch(e){ return err('BAD_JSON'); }
-
-  const now = new Date().toISOString();
-  const key = serverKeyFromRecord(rec);
-  const found = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
-  if (found){
-    const sh = getOrCreateSheet(SHEET.PUSINGAN);
-    const head = HEAD[SHEET.PUSINGAN];
-    const vals = sh.getRange(found,1,1,head.length).getValues()[0];
-    const obj = {}; head.forEach((h,i)=> obj[h]=vals[i]);
-    return ok({ already_exists:true, server_id: obj.server_id||'', server_key:key });
-  }
-
-  const rowObj = {};
-  HEAD[SHEET.PUSINGAN].forEach(h => rowObj[h] = rec[h] ?? '');
-  rowObj.server_key = key;
-  rowObj.server_id  = Utilities.getUuid();
-  rowObj.created_at = rec.created_at || now;
-  rowObj.updated_at = now;
-
-  const lock = LockService.getScriptLock(); lock.waitLock(30*1000);
-  try{ appendOrUpdateByKey(SHEET.PUSINGAN,'server_id',rowObj); }
-  finally{ lock.releaseLock(); }
-
-  return ok({ server_id: rowObj.server_id, server_key: key });
-}
-
-function api_pusingan_update(p){
-  ensureSetup();
-  const key = p.key||''; if (!key) return err('MISSING_KEY');
-  const payload = p.payload; if (!payload) return err('MISSING_PAYLOAD');
-  let rec; try{ rec = JSON.parse(payload); }catch(e){ return err('BAD_JSON'); }
-
-  const row = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
-  const now = new Date().toISOString();
-
-  const rowObj = {};
-  HEAD[SHEET.PUSINGAN].forEach(h => rowObj[h] = rec[h] ?? '');
-  rowObj.server_key = key;
-
-  const lock = LockService.getScriptLock(); lock.waitLock(30*1000);
-  try{
-    if (row){
-      const sh = getOrCreateSheet(SHEET.PUSINGAN);
-      const head = HEAD[SHEET.PUSINGAN];
-      const old = sh.getRange(row,1,1,head.length).getValues()[0];
-      const oldObj = {}; head.forEach((h,i)=> oldObj[h]=old[i]);
-      rowObj.server_id  = oldObj.server_id || Utilities.getUuid();
-      rowObj.created_at = oldObj.created_at || rec.created_at || now;
-      rowObj.updated_at = now;
-      const vals = head.map(h => rowObj[h] ?? '');
-      sh.getRange(row,1,1,head.length).setValues([vals]);
-      return ok({ server_id: rowObj.server_id, server_key:key, updated:true });
-    } else {
-      rowObj.server_id  = Utilities.getUuid();
-      rowObj.created_at = rec.created_at || now;
-      rowObj.updated_at = now;
-      appendOrUpdateByKey(SHEET.PUSINGAN,'server_id',rowObj);
-      return ok({ server_id: rowObj.server_id, server_key:key, inserted:true });
-    }
-  } finally { lock.releaseLock(); }
-}
-
 // ===== ACTUAL PULL (download data aktual dari sheet PUSINGAN) =====
 function api_actual_pull(p){
   ensureSetup();
@@ -805,29 +726,127 @@ function api_pusingan_update(p){
 }
 
 
+// ===== SYNC BULK (offline → online, banyak record sekaligus) =====
+// payload: JSON array of records. Mengembalikan rincian per-record:
+//   { ok:true, data:{ total, success, failed, results:[{local_id, ok, action?, error?}] } }
+function api_sync_bulk(p){
+  ensureSetup();
+  const u = assertAuth(p, ['admin','asisten','mandor','advisor']);
+
+  const payload = p.payload; if (!payload) return err('MISSING_PAYLOAD');
+  let records; try{ records = JSON.parse(payload); }catch(e){ return err('BAD_JSON'); }
+  if (!Array.isArray(records)) return err('BAD_PAYLOAD_NOT_ARRAY');
+
+  const now = new Date().toISOString();
+  const results = [];
+  let success = 0, failed = 0;
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30*1000);
+  try{
+    for (let i=0; i<records.length; i++){
+      const rec = records[i] || {};
+      const lid = rec.local_id || '';
+      try{
+        // Izin per-record (mandor: hanya miliknya & tidak boleh update; asisten: sesuai divisi)
+        const key = rec.server_key && String(rec.server_key).trim()
+          ? String(rec.server_key).trim()
+          : serverKeyFromRecord(rec);
+        const found = findRowByValue(SHEET.PUSINGAN, 'server_key', key);
+
+        const mode = found ? 'update' : 'insert';
+        assertMayWritePusingan(u, rec, mode);
+
+        const rowObj = {};
+        HEAD[SHEET.PUSINGAN].forEach(h => rowObj[h] = rec[h] ?? '');
+        rowObj.server_key = key;
+
+        if (found){
+          const sh = getOrCreateSheet(SHEET.PUSINGAN);
+          const head = HEAD[SHEET.PUSINGAN];
+          const old = sh.getRange(found,1,1,head.length).getValues()[0];
+          const oldObj = {}; head.forEach((h,j)=> oldObj[h]=old[j]);
+          rowObj.server_id  = oldObj.server_id || Utilities.getUuid();
+          rowObj.created_at = oldObj.created_at || rec.created_at || now;
+          rowObj.updated_at = now;
+          const vals = head.map(h => rowObj[h] ?? '');
+          sh.getRange(found,1,1,head.length).setValues([vals]);
+          results.push({ local_id: lid, ok:true, action:'update', server_key:key, server_id:rowObj.server_id });
+        }else{
+          rowObj.server_id  = Utilities.getUuid();
+          rowObj.created_at = rec.created_at || now;
+          rowObj.updated_at = now;
+          appendOrUpdateByKey(SHEET.PUSINGAN,'server_id',rowObj);
+          results.push({ local_id: lid, ok:true, action:'insert', server_key:key, server_id:rowObj.server_id });
+        }
+        success++;
+      }catch(e){
+        failed++;
+        results.push({ local_id: lid, ok:false, error: (e && e.message) ? e.message : String(e) });
+      }
+    }
+  } finally {
+    lock.releaseLock();
+  }
+
+  return ok({ total: records.length, success, failed, results });
+}
+
+
 // ===== Router =====
+function _dispatch(p){
+  switch (p.route || ''){
+    case 'auth.login':        return api_auth_login(p);
+    case 'user.add':          return api_user_add(p);
+    case 'user.reset':        return api_user_reset(p);
+    case 'user.list':         return api_user_list(p);
+    case 'master.pull':       return api_master_pull(p);
+    case 'master.push':       return api_master_push(p);
+    case 'pusingan.check':    return api_pusingan_check(p);
+    case 'pusingan.insert':   return api_pusingan_insert(p);
+    case 'pusingan.update':   return api_pusingan_update(p);
+    case 'sync.bulk':         return api_sync_bulk(p);
+    case 'user.delete':       return api_user_delete(p);
+    case 'actual.pull':       return api_actual_pull(p);
+    case 'actual_pull':       return api_actual_pull(p); // alias
+    default: return err('UNKNOWN_ROUTE');
+  }
+}
+
 function doGet(e){
   try{
     const p = e && e.parameter ? e.parameter : {};
-
-    // >>> tambah ini: dukung JSONP
+    // >>> dukung JSONP
     CB = p.callback || null;
+    return _dispatch(p);
+  }catch(ex){
+    return err(ex && ex.message ? ex.message : ex);
+  }
+}
 
-    switch (p.route || ''){
-      case 'auth.login':        return api_auth_login(p);
-      case 'user.add':          return api_user_add(p);
-      case 'user.reset':        return api_user_reset(p);
-      case 'user.list':         return api_user_list(p);
-      case 'master.pull':       return api_master_pull(p);
-      case 'master.push':       return api_master_push(p);
-      case 'pusingan.check':    return api_pusingan_check(p);
-      case 'pusingan.insert':   return api_pusingan_insert(p);
-      case 'pusingan.update':   return api_pusingan_update(p);
-      case 'user.delete':       return api_user_delete(p);
-      case 'actual.pull':       return api_actual_pull(p);
-      case 'actual_pull':       return api_actual_pull(p); // alias
-      default: return err('UNKNOWN_ROUTE');
+// doPost: dipakai untuk payload besar (mis. sync.bulk) tanpa batas panjang URL.
+// FE mengirim body form-encoded (text/plain) sehingga tidak memicu CORS preflight.
+function doPost(e){
+  try{
+    let p = (e && e.parameter) ? e.parameter : {};
+
+    // Bila body berupa urlencoded di postData.contents (saat Content-Type text/plain),
+    // GAS tidak otomatis mengisi e.parameter — parse manual.
+    if ((!p || !p.route) && e && e.postData && e.postData.contents){
+      const parsed = {};
+      String(e.postData.contents).split('&').forEach(pair=>{
+        if (!pair) return;
+        const idx = pair.indexOf('=');
+        const k = decodeURIComponent((idx>=0 ? pair.slice(0,idx) : pair).replace(/\+/g,' '));
+        const v = idx>=0 ? decodeURIComponent(pair.slice(idx+1).replace(/\+/g,' ')) : '';
+        parsed[k] = v;
+      });
+      // gabungkan: e.parameter (jika ada) menang utk key yang sudah terisi
+      p = Object.assign(parsed, p);
     }
+
+    CB = p.callback || null;
+    return _dispatch(p);
   }catch(ex){
     return err(ex && ex.message ? ex.message : ex);
   }

@@ -5,7 +5,7 @@
 import { runOfflineWarmupOnce } from './offline-prep.js';
 import { $ } from '../core/utils.js';
 import { Keys, LStore, IStore } from '../core/storage.js';
-import { SyncState, getRecord } from '../core/sync.js';
+import { SyncState, SyncFailures, getRecord } from '../core/sync.js';
 import { API } from '../core/api.js';
 import { Progress } from '../core/progress.js';
 
@@ -419,7 +419,8 @@ function attachRowHandlers(){
         showToast('Sinkron sukses');
         Progress.tick(1,1);
       }catch(e){
-        showToast(e.message||'Gagal sinkron');
+        try{ await SyncFailures.record(rec, e.message || 'Gagal sinkron'); }catch(_){}
+        showToast((e.message||'Gagal sinkron') + ' — tercatat di "Gagal Sinkron"');
       }finally{
         Progress.close();
         _setBusyUI(false);
@@ -533,24 +534,49 @@ async function pushOne(rec){
   // keep compatibility (kalau SyncState masih dipakai modul lain)
   try{ SyncState.dequeue(rec.local_id); }catch(_){}
 
+  // bersihkan catatan kegagalan bila sebelumnya pernah gagal
+  try{ await SyncFailures.clearOne(rec.local_id); }catch(_){}
+
   await svReloadCache();
 }
 
-// ---------- Bulk sync (try bulk → fallback per-record JSONP) ----------
+// ---------- Bulk sync ----------
+// Mengembalikan { ok, okIds:[], failed:[{local_id, error}] }
+// Strategi: coba endpoint bulk (POST) dulu. Bila endpoint bulk gagal total
+// (mis. jaringan/route), fallback ke per-record pushOne.
 async function syncBulk(records){
+  const byId = new Map(records.map(r=>[String(r.local_id), r]));
+
+  // 1) Coba bulk POST
   try{
     const res = await API.syncBulk({ records, ..._authParams() });
-    if (res && res.ok) return { ok:true };
+    if (res && res.ok && res.data && Array.isArray(res.data.results)){
+      const okIds = [];
+      const failed = [];
+      res.data.results.forEach(rr=>{
+        if (rr.ok) okIds.push(String(rr.local_id));
+        else failed.push({ local_id:String(rr.local_id), error: rr.error || 'Gagal di server' });
+      });
+      return { ok: failed.length===0, okIds, failed };
+    }
+    // ok tapi tanpa rincian → anggap semua sukses
+    if (res && res.ok){
+      return { ok:true, okIds: records.map(r=>String(r.local_id)), failed:[] };
+    }
     throw new Error(res?.error || 'Sync bulk gagal');
   }catch(errBulk){
-    let fail=0;
+    // 2) Fallback per-record (mis. saat offline pakai JSONP, atau endpoint bulk error)
+    const okIds = [];
+    const failed = [];
     for (const rec of records){
       try{
-        // gunakan pushOne supaya konsisten (server_key, auth, fallback)
         await pushOne(rec);
-      }catch(e){ fail++; }
+        okIds.push(String(rec.local_id));
+      }catch(e){
+        failed.push({ local_id:String(rec.local_id), error: (e && e.message) ? e.message : 'Gagal sinkron' });
+      }
     }
-    return (fail===0) ? { ok:true } : { ok:false, error:`Sebagian gagal (${fail})` };
+    return { ok: failed.length===0, okIds, failed };
   }
 }
 
@@ -590,11 +616,37 @@ async function doSync(localIds, opt={ source:'selected' }){
 
   try{
     const res = await syncBulk(records);
-    if (!res || !res.ok) throw new Error(res?.error || 'Sync gagal');
+    const okIds  = res.okIds || [];
+    const failed = res.failed || [];
 
-    await _markSynced(records.map(r=>r.local_id));
-    showToast(`Sinkron sukses: ${records.length} baris`);
+    // Tandai yang sukses
+    if (okIds.length) await _markSynced(okIds);
+
+    // Catat yang gagal ke log kegagalan
+    if (failed.length){
+      const map = new Map(records.map(r=>[String(r.local_id), r]));
+      for (const f of failed){
+        const rec = map.get(String(f.local_id));
+        if (rec) await SyncFailures.record(rec, f.error);
+      }
+      // bersihkan log utk yang sukses
+      await SyncFailures.clearMany(okIds);
+    }else{
+      await SyncFailures.clearMany(okIds);
+    }
+
+    if (failed.length === 0){
+      showToast(`Sinkron sukses: ${okIds.length} baris`);
+    }else if (okIds.length === 0){
+      showToast(`Gagal sinkron semua (${failed.length}). Lihat halaman "Gagal Sinkron".`);
+    }else{
+      showToast(`Sebagian sinkron: ${okIds.length} sukses, ${failed.length} gagal. Lihat "Gagal Sinkron".`);
+    }
   }catch(e){
+    // kegagalan menyeluruh tak terduga → catat semua sebagai gagal
+    try{
+      for (const rec of records){ await SyncFailures.record(rec, e.message || 'Gagal sinkron'); }
+    }catch(_){}
     showToast(e.message || 'Gagal sinkron sebagian/semua');
   }finally{
     Progress.close();

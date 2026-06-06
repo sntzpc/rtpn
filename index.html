@@ -20,13 +20,16 @@
         <a href="#/input" data-link>Input</a>
         <a href="#/report" data-link>Report</a>
         <a href="#/sync" data-link>Sinkronisasi</a>
+        <a href="#/sync-failures" data-link>Gagal Sinkron</a>
         <a href="#/stats" data-link>Statistik</a>
         <a href="#/settings" data-link>Pengaturan</a>
-        <a href="#/users" id="menu-user-manage" data-link>Kelola User</a>
-        <!-- NEW: menu admin (disembunyikan default, akan ditampilkan via guard JS bila role=admin) -->
+        <!-- menu admin (disembunyikan default, ditampilkan via guard JS bila role=admin) -->
         <a href="#/users" id="menu-user-manage" data-link style="display:none">Kelola User</a>
       </nav>
-      <div class="role-badge" id="role-badge">Role: -</div>
+      <div class="header-right">
+        <div class="role-badge" id="role-badge">Role: -</div>
+        <button class="auth-btn" id="auth-btn" type="button">Login</button>
+      </div>
     </header>
 
     <main id="app"></main>
@@ -38,15 +41,11 @@
     <!-- App bootstrap -->
     <script type="module">
       import { initRouter } from "./core/router.js";
-      import { loadSessionRoleBadge } from "./core/utils.js";
+      import "./core/auth.js";
       import "./ui/toast.js";
       import "./ui/spinner.js";
 
-      window.addEventListener("hashchange", () => {
-        initRouter();
-      });
       window.addEventListener("load", () => {
-        loadSessionRoleBadge();
         initRouter();
       });
     </script>

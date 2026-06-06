@@ -4,9 +4,10 @@
 import { $, $$ } from './utils.js';
 import { Keys } from './storage.js';
 import { applyTheme, mountThemeToggle } from './theme.js';
+import { isLoggedIn, openLoginModal, logout, getSession } from './auth.js';
 
 // Cache-busting untuk dynamic import (ubah nilainya untuk memaksa reload modul)
-const BUST = localStorage.getItem('pp2:cacheBust') || 'dev';
+const BUST = localStorage.getItem('pp2:cacheBust') || 'v140';
 const withBust = (url) => `${url}${url.includes('?') ? '&' : '?'}v=${BUST}`;
 
 // ---- Helpers RBAC ----
@@ -57,6 +58,43 @@ export function refreshSessionUI(){
   if (elRole) elRole.textContent = text;
   if (elUser) elUser.textContent = (name || nik || '');
   if (menuAdmin) menuAdmin.style.display = isAdmin() ? '' : 'none';
+
+  // Tombol login/logout di header (bila ada)
+  const elAuthBtn = document.getElementById('auth-btn');
+  if (elAuthBtn){
+    if (isLoggedIn()){
+      elAuthBtn.textContent = 'Logout';
+      elAuthBtn.onclick = ()=>{
+        logout();
+        refreshSessionUI();
+        ensureAuthGate(); // tampilkan modal login lagi
+      };
+    }else{
+      elAuthBtn.textContent = 'Login';
+      elAuthBtn.onclick = ()=> ensureAuthGate();
+    }
+  }
+}
+
+// ---- Gerbang login: tampilkan modal bila belum login ----
+export function ensureAuthGate(){
+  if (isLoggedIn()) return true;
+  const app = document.getElementById('app');
+  if (app){
+    app.innerHTML = `<div class="card"><h2>Selamat datang</h2>
+      <p>Silakan login untuk menggunakan aplikasi Pusingan Panen.</p></div>`;
+  }
+  openLoginModal(()=>{
+    refreshSessionUI();
+    // Setelah login: arahkan ke Pengaturan agar user menarik master & data dulu
+    if (location.hash !== '#/settings'){
+      location.hash = '#/settings';
+    }else{
+      const appEl = document.getElementById('app');
+      renderRoute('#/settings', appEl);
+    }
+  });
+  return false;
 }
 
 // ---- Util route ----
@@ -66,6 +104,13 @@ function currentRoute(){
 
 async function renderRoute(route, app){
   if (!app) return;
+
+  // Gerbang login: blok semua route bila belum login
+  if (!isLoggedIn()){
+    ensureAuthGate();
+    return;
+  }
+
   app.innerHTML = '<div class="card"><p>Memuat…</p></div>';
 
   try{
@@ -82,6 +127,11 @@ async function renderRoute(route, app){
       }
       case '#/sync': {
         const mod = await import(/* @vite-ignore */ withBust('../features/sync-view.js'));
+        mod.render(app);
+        break;
+      }
+      case '#/sync-failures': {
+        const mod = await import(/* @vite-ignore */ withBust('../features/sync-failures.js'));
         mod.render(app);
         break;
       }
@@ -144,7 +194,13 @@ export async function initRouter(){
 
   // Render pertama
   refreshSessionUI();
-  await renderRoute(currentRoute(), app);
+
+  // Gerbang login saat pertama buka
+  if (!isLoggedIn()){
+    ensureAuthGate();
+  }else{
+    await renderRoute(currentRoute(), app);
+  }
 
   // Navigasi via hash
   window.addEventListener('hashchange', () => {

@@ -46,41 +46,41 @@ function view(){
   return `
   <div class="card">
     <h2>Pengaturan</h2>
+    <div class="onboard" id="onboard-guide">
+      <b>Langkah awal sebelum menggunakan aplikasi:</b>
+      <ol style="margin:8px 0 0 18px; padding:0">
+        <li>Klik <b>Tarik Master</b> untuk mengunduh data master (blok, divisi, dll).</li>
+        <li>Klik <b>Download Data Aktual → Lokal</b> agar input lebih cepat &amp; akurat.</li>
+        <li>Mulai input di menu <b>Input</b>, lalu <b>Sinkronisasi</b> bila online.</li>
+      </ol>
+    </div>
+
+    <div class="row" style="margin-top:12px">
+      <div class="col">
+        <label>Sesi Aktif</label>
+        <div id="session-info" class="session-info">Belum login</div>
+      </div>
+      <div class="col" style="display:flex; align-items:flex-end">
+        <button class="danger" id="btn-logout" type="button">Logout</button>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:8px">
+      <div class="col"><button id="btn-master-pull" class="primary">Tarik Master</button></div>
+      <div class="col"><button id="btn-download-data" class="primary">Download Data Aktual → Lokal</button></div>
+    </div>
     <div class="row">
       <div class="col">
-        <label>Role Aktif</label>
-        <select id="set-role">
-          <option value="-">- pilih -</option>
-          <option value="mandor">Mandor</option>
-          <option value="asisten">Asisten</option>
-          <option value="admin">Admin</option>
-          <option value="advisor">Advisor</option>
-        </select>
+        <label>Filter Tahun (Aktual)</label>
+        <input id="flt-year" type="number" placeholder="2025" />
       </div>
       <div class="col">
-        <label>NIK</label>
-        <input id="set-nik" placeholder="NIK" />
-      </div>
-      <div class="col">
-        <label>Password</label>
-        <input id="set-pass" type="password" placeholder="password" />
+        <label>Filter Estate (Aktual)</label>
+        <select id="flt-estate" multiple size="5"></select>
+        <div class="hint">Kosong / tidak dipilih = Semua Estate</div>
       </div>
     </div>
     <div class="row">
-      <div class="col"><button class="primary" id="btn-login">Login (Set Role)</button></div>
-      <div class="col"><button id="btn-master-pull">Tarik Master</button></div>
-      <div class="col"><button id="btn-download-data">Download Data Aktual → Lokal</button></div>
-      <div class="row">
-        <div class="col">
-          <label>Filter Tahun (Aktual)</label>
-          <input id="flt-year" type="number" placeholder="2025" />
-        </div>
-        <div class="col">
-          <label>Filter Estate (Aktual)</label>
-          <select id="flt-estate" multiple size="5"></select>
-          <div class="hint">Kosong / tidak dipilih = Semua Estate</div>
-        </div>
-      </div>
       <div class="col"><button class="danger" id="btn-reset-local">Reset Semua Data Lokal</button></div>
     </div>
   </div>
@@ -110,6 +110,17 @@ function view(){
     </div>
   </div>
   `;
+}
+
+function renderSessionInfo(){
+  const el = document.getElementById('session-info');
+  if (!el) return;
+  const role = (localStorage.getItem(Keys.ROLE)||'').toLowerCase();
+  const nik  = localStorage.getItem(Keys.NIK) || '';
+  const name = localStorage.getItem(Keys.NAME) || '';
+  if (!role || role==='-'){ el.textContent = 'Belum login'; return; }
+  const label = role==='admin'?'Admin':role==='asisten'?'Asisten':role==='advisor'?'Advisor':'Mandor';
+  el.innerHTML = `<b>${label}</b> — ${name || nik}${nik?` (${nik})`:''}`;
 }
 
 // ---------- Section visibility ----------
@@ -410,10 +421,6 @@ async function refreshFilterUI(){
 
 // ---------- Bind utama ----------
 function bind(){
-  // Prefill
-  $('#set-role').value = localStorage.getItem(Keys.ROLE) || '-';
-  $('#set-nik').value  = localStorage.getItem(Keys.NIK)  || '';
-
   // Theme toggle (opsional, bila ada switch di header)
   const chkDark = $('#toggle-dark');
   if (chkDark){
@@ -427,49 +434,19 @@ function bind(){
 
   ensureAsistenSections();
   ensureBackupRestoreAccess();
+  renderSessionInfo();
   refreshFilterUI().catch(console.warn);
 
-  // LOGIN
-  $('#btn-login').addEventListener('click', async ()=>{
-    const role = ($('#set-role').value||'').toLowerCase();
-    const nik  = ($('#set-nik').value||'').trim();
-    const pass = $('#set-pass').value;
-    if (!role || role==='-') return showToast('Pilih role');
-    if (!nik || !pass)       return showToast('NIK & Password wajib');
-
-    try{
-      spinner(true);
-      const pass_hash = hashPlain(pass);
-      const res = await API.login({ nik, pass_hash, role });
-      if (!res.ok) throw new Error(res.error || 'Login gagal');
-
-      localStorage.setItem(Keys.ROLE, role);
-      localStorage.setItem(Keys.NIK,  nik);
-      localStorage.setItem(Keys.NAME, res.data?.name || (role==='admin' ? 'Admin' : role==='asisten' ? 'Asisten' : 'Mandor'));
-      localStorage.setItem(Keys.TOKEN, pass_hash);
-
-      if (role==='asisten'){
-        const arr = (await IStore.getArr(Keys.MASTER_ASISTEN).catch(()=>[])) || [];
-        const me  = arr.find(a => String(a.nik)===String(nik));
-        const divList = (me && me.divisi_id) ? [String(me.divisi_id)] : [];
-        localStorage.setItem(Keys.USER_DIVISI, JSON.stringify(divList));
-      }
-
-      const roleLabel = role==='admin'?'Admin':role==='asisten'?'Asisten':'Mandor';
-      const text = `Aktif: ${roleLabel} — ${localStorage.getItem(Keys.NAME)} (${nik})`;
-      const elRole = document.getElementById('role-badge'); if (elRole) elRole.textContent = text;
-      const elUser = document.getElementById('user-badge'); if (elUser) elUser.textContent = localStorage.getItem(Keys.NAME) || nik;
-
-      ensureAsistenSections();
-      ensureBackupRestoreAccess();
-
-      $('#set-pass').value='';
-      showToast('Login sukses');
-    }catch(e){
-      showToast(e.message || 'Login gagal');
-    }finally{
-      spinner(false);
-    }
+  // LOGOUT
+  document.getElementById('btn-logout')?.addEventListener('click', ()=>{
+    if (!confirm('Logout dari sesi ini?')) return;
+    [Keys.ROLE, Keys.NIK, Keys.NAME, Keys.TOKEN, Keys.USER_DIVISI].forEach(k=>{
+      try{ localStorage.removeItem(k); }catch(_){}
+    });
+    showToast('Anda telah logout');
+    // muat ulang agar gerbang login muncul kembali
+    location.hash = '#/settings';
+    location.reload();
   });
 
   // TARIK MASTER (fetch → fallback JSONP)

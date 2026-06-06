@@ -22,6 +22,61 @@ export const SyncState = {
   }
 };
 
+// =====================
+// Log Kegagalan Sinkron
+// Struktur item: { local_id, ts, error, attempts, snapshot }
+// =====================
+export const SyncFailures = {
+  async all(){ return IStore.getArr(Keys.SYNC_FAILURES); },
+
+  // catat / perbarui kegagalan untuk sebuah local_id
+  async record(rec, errorMsg){
+    const list = await SyncFailures.all();
+    const id = String(rec?.local_id ?? '');
+    const idx = list.findIndex(x => String(x.local_id) === id);
+    const now = new Date().toISOString();
+    const snapshot = {
+      tanggal:    rec?.tanggal || '',
+      divisi_id:  rec?.divisi_id || '',
+      blok_id:    rec?.blok_id || '',
+      nik_mandor: rec?.nik_mandor || '',
+      jjg:        rec?.jjg ?? '',
+      hk:         rec?.hk ?? '',
+      tonase_ton: rec?.tonase_ton ?? '',
+    };
+    if (idx >= 0){
+      list[idx] = {
+        ...list[idx],
+        ts: now,
+        error: String(errorMsg || 'Gagal'),
+        attempts: (Number(list[idx].attempts) || 0) + 1,
+        snapshot,
+      };
+    }else{
+      list.push({ local_id: id, ts: now, error: String(errorMsg || 'Gagal'), attempts: 1, snapshot });
+    }
+    await IStore.setArr(Keys.SYNC_FAILURES, list);
+  },
+
+  // hapus catatan kegagalan (mis. setelah berhasil sinkron ulang)
+  async clearOne(local_id){
+    const list = await SyncFailures.all();
+    const next = list.filter(x => String(x.local_id) !== String(local_id));
+    await IStore.setArr(Keys.SYNC_FAILURES, next);
+  },
+
+  async clearMany(localIds){
+    const set = new Set((localIds || []).map(String));
+    const list = await SyncFailures.all();
+    const next = list.filter(x => !set.has(String(x.local_id)));
+    await IStore.setArr(Keys.SYNC_FAILURES, next);
+  },
+
+  async clearAll(){ await IStore.setArr(Keys.SYNC_FAILURES, []); },
+
+  async count(){ return (await SyncFailures.all()).length; },
+};
+
 export async function getRecord(local_id){
   const list = await IStore.getArr(Keys.INPUT_RECORDS);
   return list.find(r=>String(r.local_id)===String(local_id)) || null;

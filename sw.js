@@ -1,5 +1,5 @@
 /* sw.js — Pusingan Panen: cache app-shell + CDN libs (offline-first) */
-const VERSION = 'pp2-sw-v1.3.13';
+const VERSION = 'pp2-sw-v1.4.0';
 const APP_SHELL = [
   './',
   './index.html',
@@ -12,6 +12,7 @@ const APP_SHELL = [
   './core/router.js',
   './core/api.js',
   './core/sync.js',
+  './core/auth.js',
   './core/theme.js',
   './core/progress.js',
 
@@ -21,6 +22,7 @@ const APP_SHELL = [
   './features/settings.js',
   './features/stats.js',
   './features/sync-view.js',
+  './features/sync-failures.js',
   './features/users.js',
 
   // ui (jika ada)

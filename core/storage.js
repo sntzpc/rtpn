@@ -33,6 +33,7 @@ export const Keys = {
   // === Input & Sinkron (besar → idb)
   INPUT_RECORDS: NS+'input.records',
   SYNC_QUEUE   : NS+'sync.queue',
+  SYNC_FAILURES: NS+'sync.failures', // log kegagalan sinkron (besar → idb)
   PARAF_LOG    : NS+'report.paraf',
 
   // UI kecil
@@ -99,7 +100,7 @@ async function migrateKeyToIDB(key, kind){
 const BIG_ARR_KEYS = [
   Keys.MASTER_COMPANY, Keys.MASTER_ESTATE, Keys.MASTER_DIVISI, Keys.MASTER_KADVEL,
   Keys.MASTER_BLOK, Keys.MASTER_MANDOR, Keys.MASTER_ASISTEN, Keys.MASTER_LIBUR,
-  Keys.INPUT_RECORDS, Keys.SYNC_QUEUE, Keys.PARAF_LOG,
+  Keys.INPUT_RECORDS, Keys.SYNC_QUEUE, Keys.SYNC_FAILURES, Keys.PARAF_LOG,
 
   // ❌ Keys.USER_DIVISI JANGAN dimigrasikan ke IDB
   // Karena core/api.js membaca USER_DIVISI dari localStorage (sync)
