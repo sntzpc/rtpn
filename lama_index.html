@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="id">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <meta name="theme-color" content="#0b6bcb" />
+    <title>Pusingan Panen</title>
+    <link rel="stylesheet" href="./assets/style.css" />
+    <!-- Ikon sederhana -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='64' height='64'%3E%3Ctext y='54' x='6' font-size='56'%3E🌴%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+  <body>
+    <header class="app-header">
+      <h1>Pusingan Panen</h1>
+      <nav class="app-nav">
+        <a href="#/input" data-link>Input</a>
+        <a href="#/report" data-link>Report</a>
+        <a href="#/sync" data-link>Sinkronisasi</a>
+        <a href="#/sync-failures" data-link>Gagal Sinkron</a>
+        <a href="#/stats" data-link>Statistik</a>
+        <a href="#/settings" data-link>Pengaturan</a>
+        <!-- menu admin (disembunyikan default, ditampilkan via guard JS bila role=admin) -->
+        <a href="#/users" id="menu-user-manage" data-link style="display:none">Kelola User</a>
+      </nav>
+      <div class="header-right">
+        <div class="role-badge" id="role-badge">Role: -</div>
+        <button class="auth-btn" id="auth-btn" type="button">Login</button>
+      </div>
+    </header>
+
+    <main id="app"></main>
+
+    <footer class="app-footer">
+      <small>Offline-first • LocalStorage • Sync</small>
+    </footer>
+
+    <!-- App bootstrap -->
+    <script type="module">
+      import { initRouter } from "./core/router.js";
+      import "./core/auth.js";
+      import "./ui/toast.js";
+      import "./ui/spinner.js";
+
+      window.addEventListener("load", () => {
+        initRouter();
+      });
+    </script>
+
+    <!-- Export libs (dibiarkan global agar mudah dipakai fitur ekspor) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+
+    <!-- Konfigurasi GAS endpoint -->
+    <script>
+      window.GAS_BASE_URL='https://script.google.com/macros/s/AKfycbzYHcrz_tfrsL3xhdn6VPIwbMQ7Q0BgUvR3WTjSsZemYItfljKWdnU6_sz4Jpn26Ebadg/exec';
+    </script>
+
+    <!-- NEW: registrasi service worker untuk offline mode -->
+<!-- tepat sebelum </body>, daftarkan Service Worker: -->
+<script>
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js')
+        .then(reg => {
+          // opsional: auto-activate update
+          if (reg.waiting) reg.waiting.postMessage({type:'SKIP_WAITING'});
+          reg.addEventListener('updatefound', () => {
+            const sw = reg.installing;
+            if (!sw) return;
+            sw.addEventListener('statechange', () => {
+              if (sw.state === 'installed' && navigator.serviceWorker.controller) {
+                // SW baru siap; bisa tampilkan toast “App diperbarui”
+                console.log('Service worker updated');
+              }
+            });
+          });
+        })
+        .catch(err => console.error('SW reg failed', err));
+    });
+  }
+</script>
+
+  </body>
+</html>
